@@ -3,17 +3,34 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import {createNaverClient, NaverConnectionError} from './naver-caldav.mjs';
+import {createWeatherClient,WeatherError} from './weather.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
-const allowed = new Set(['index.html','styles.css','app.js','data.js','imports.js','journal.js','naver.js','devices.js','preview.html','preview.css','preview.js','assets/icon.svg','assets/seasonal-companion.png']);
+const allowed = new Set(['index.html','styles.css','app.js','data.js','imports.js','journal.js','planning.js','weather-data.js','naver.js','devices.js','preview.html','preview.css','preview.js','assets/icon.svg','assets/seasonal-companion.png']);
 const types = { '.html':'text/html; charset=utf-8', '.css':'text/css; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.svg':'image/svg+xml', '.png':'image/png' };
-export function createServer({naverClient=createNaverClient({username:process.env.NAVER_CALDAV_USERNAME,password:process.env.NAVER_CALDAV_APP_PASSWORD})}={}) {
+export function createServer({naverClient=createNaverClient({username:process.env.NAVER_CALDAV_USERNAME,password:process.env.NAVER_CALDAV_APP_PASSWORD}),weatherClient=createWeatherClient()}={}) {
   let syncing=false;
+  let weatherBusy=false;
   return http.createServer(async (request, response) => {
     let pathname;
     try { pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname).replace(/^\/+/, '') || 'index.html'; }
     catch { response.writeHead(400).end('Bad request'); return; }
     if(pathname==='preview' || pathname==='preview/') pathname='preview.html';
+    if(pathname==='api/weather/history') {
+      const json=(status,value)=>response.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}).end(JSON.stringify(value));
+      const host=request.headers.host || '';
+      if(!/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host) || request.headers['x-imamttae-request']!=='1' || request.headers.origin && request.headers.origin!==`http://${host}`) {json(403,{error:'이 앱에서만 조회할 수 있어요.'});return;}
+      if(request.method!=='POST') {json(405,{error:'POST 요청이 필요해요.'});return;}
+      if(!request.headers['content-type']?.startsWith('application/json')) {json(415,{error:'JSON 요청이 필요해요.'});return;}
+      if(weatherBusy) {json(429,{error:'이미 날씨를 확인하고 있어요. 잠시 후 다시 시도해 주세요.'});return;}
+      try {
+        let size=0;const chunks=[];
+        for await(const chunk of request) {size+=chunk.length;if(size>4096) {json(413,{error:'요청이 너무 커요.'});return;}chunks.push(chunk);}
+        let body;try {body=JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch {json(400,{error:'날짜와 지역을 확인해 주세요.'});return;}
+        weatherBusy=true;try {json(200,await weatherClient.history(body?.date,body?.region));}finally {weatherBusy=false;}
+      } catch(problem) {json(problem instanceof WeatherError ? problem.status : 502,{error:problem instanceof WeatherError ? problem.message : '날씨 자료를 확인하지 못했어요.'});}
+      return;
+    }
     if(pathname.startsWith('api/naver/')) {
       const json=(status,value)=>response.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}).end(JSON.stringify(value));
       const host=request.headers.host || '';

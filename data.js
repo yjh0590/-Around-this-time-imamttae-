@@ -26,8 +26,8 @@ export function calendarCells(year, month) {
   return Array.from({ length: Math.ceil((offset + count) / 7) * 7 }, (_, i) => i >= offset && i < offset + count ? i - offset + 1 : null);
 }
 export function sanitizeState(raw) {
-  const tasks = Array.isArray(raw?.tasks) ? raw.tasks.filter(t => t && typeof t.id === 'string' && isDateKey(t.date) && typeof t.title === 'string').map(t => ({ id: t.id, date: t.date, title: t.title.slice(0, 100), done: t.done === true })) : [];
-  const entries = Array.isArray(raw?.entries) ? raw.entries.filter(e => e && typeof e.id === 'string' && isDateKey(e.date) && typeof e.text === 'string').map(e => ({ id: e.id, date: e.date, text: e.text.slice(0, 1000) })) : [];
+  const tasks = Array.isArray(raw?.tasks) ? raw.tasks.filter(t => t && typeof t.id === 'string' && isDateKey(t.date) && typeof t.title === 'string').map(t => ({ id: t.id, date: t.date, title: t.title.slice(0, 100), done: t.done === true,...(typeof t.seriesId==='string' && ['daily','weekly','monthly','yearly'].includes(t.repeat) ? {seriesId:t.seriesId,repeat:t.repeat} : {}) })) : [];
+  const entries = Array.isArray(raw?.entries) ? raw.entries.filter(e => e && typeof e.id === 'string' && isDateKey(e.date) && typeof e.text === 'string').map(e => ({ id: e.id, date: e.date, text: e.text.slice(0, 1000),...(typeof e.source==='string' && e.source.trim() ? {source:e.source.slice(0,200)} : {}) })) : [];
   const memories = Array.isArray(raw?.memories) ? raw.memories.filter(validMemory).map(cleanMemory) : [];
   const categories = Array.isArray(raw?.categories) ? [...new Set(raw.categories.filter(key => typeof key === 'string' && Object.hasOwn(CATEGORIES,key)))] : Object.keys(CATEGORIES);
   const calendarIds=Array.isArray(raw?.naver?.calendarIds) ? [...new Set(raw.naver.calendarIds.filter(id=>typeof id==='string' && /^[a-f0-9]{24}$/.test(id)))].slice(0,10) : [];
@@ -45,10 +45,10 @@ export function isDateKey(value) {
 export function parseBackup(text) {
   let raw;
   try { raw = JSON.parse(text); } catch { throw new Error('JSON 파일을 읽지 못했어요. 이맘때에서 내려받은 백업을 선택해 주세요.'); }
-  if (!raw || ![1,2].includes(raw.version) || !Array.isArray(raw.tasks) || !Array.isArray(raw.entries)) {
+  if (!raw || ![1,2,3].includes(raw.version) || !Array.isArray(raw.tasks) || !Array.isArray(raw.entries)) {
     throw new Error('지원하는 이맘때 백업 형식이 아니에요.');
   }
-  if (raw.version === 2) {
+  if (raw.version >= 2) {
     if (!Array.isArray(raw.memories) || !Array.isArray(raw.categories) || raw.categories.some(key => typeof key !== 'string' || !Object.hasOwn(CATEGORIES,key))) throw new Error('기록 종류를 읽을 수 없는 백업이에요.');
     const ids = new Set();
     for (const memory of raw.memories) {
@@ -65,6 +65,7 @@ export function parseBackup(text) {
         throw new Error('백업에 잘못된 날짜나 항목이 있어요. 현재 데이터는 변경하지 않았어요.');
       }
       ids.add(item.id);
+      if(key==='tasks' && (item.seriesId!==undefined || item.repeat!==undefined) && (typeof item.seriesId!=='string' || !item.seriesId.trim() || !['daily','weekly','monthly','yearly'].includes(item.repeat))) throw new Error('반복 일정 정보를 읽지 못했어요.');
     }
   }
   return sanitizeState(raw);
@@ -104,7 +105,7 @@ function cleanMemory(item) {
 export function timelineItems(state, query = '') {
   const categories = state.categories || Object.keys(CATEGORIES);
   const items = [...(state.memories || [])];
-  if (categories.includes('diary')) items.push(...state.entries.map(entry => ({...entry,type:'diary',title:entry.text,text:'',source:'내가 쓴 일기'})));
+  if (categories.includes('diary')) items.push(...state.entries.map(entry => ({...entry,type:'diary',title:entry.text,text:'',source:entry.source || '내가 쓴 일기'})));
   if (categories.includes('calendar')) items.push(...state.tasks.map(task => ({...task,type:'calendar',text:'',source:'내가 담은 일정'})));
   const needle = query.trim().normalize('NFC').toLocaleLowerCase('ko-KR');
   return items.filter(item => categories.includes(item.type) && (!needle || `${item.date} ${item.title} ${item.text} ${item.source}`.normalize('NFC').toLocaleLowerCase('ko-KR').includes(needle))).sort((a,b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));

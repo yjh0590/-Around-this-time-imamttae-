@@ -12,7 +12,7 @@ await mkdir(output, { recursive:true });
 const profile = await mkdtemp(path.join(output, 'browser-profile-'));
 let naverSyncCalls=0;
 let naverConfiguredForTest=true;
-const server = createServer({naverClient:{get configured(){return naverConfiguredForTest;},list:async()=>[{id:'a'.repeat(24),name:'가상 검증용 네이버 캘린더'}],sync:async(date,ids)=>{
+const server = createServer({weatherClient:{history:async(date,regionId)=>({date,regionId,regionLabel:'서울',minimum:5,maximum:14.9,precipitation:0.1})},naverClient:{get configured(){return naverConfiguredForTest;},list:async()=>[{id:'a'.repeat(24),name:'가상 검증용 네이버 캘린더'}],sync:async(date,ids)=>{
   assert.deepEqual(ids,['a'.repeat(24)]);naverSyncCalls++;
   return {items:[{id:'naver:browser-fixture',type:'calendar',date:lastYearRange(new Date(`${date}T12:00:00`)).anchor,title:'네이버 시험 일정',text:'가상 응답으로 검증하는 일정',source:'네이버 캘린더 · 가상 검증용'}],skipped:0,range:lastYearRange(new Date(`${date}T12:00:00`),14)};
 }}});
@@ -277,6 +277,43 @@ try {
     await waitFor(`document.querySelector('.nav-item[aria-current="page"]').getAttribute('href') === '#${destination}'`);
     assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'),true,`320px overflow on ${destination}`);
   }
+  await evaluate("location.hash='today'");
+  await waitFor("document.querySelector('[data-add-task]')");
+  await evaluate("document.querySelector('[data-add-task]').click();document.querySelector('#task-title').value='매월 생활 점검';document.querySelector('#task-date').value='2025-01-31';document.querySelector('#task-date').dispatchEvent(new Event('change',{bubbles:true}));document.querySelector('#task-repeat').value='monthly';document.querySelector('#task-repeat').dispatchEvent(new Event('change',{bubbles:true}));document.querySelector('#task-until').value='2025-03-31';window.originalSetItem=Storage.prototype.setItem;Storage.prototype.setItem=function(){throw new DOMException('full','QuotaExceededError')};document.querySelector('#task-form').requestSubmit()");
+  assert.equal(await evaluate("JSON.parse(localStorage.getItem('imamttae:v1')).tasks.filter(task=>task.title==='매월 생활 점검').length"),0,'failed recurring save preserves previous data');
+  await evaluate("Storage.prototype.setItem=window.originalSetItem;document.querySelector('#task-form').requestSubmit()");
+  assert.deepEqual(await evaluate("JSON.parse(localStorage.getItem('imamttae:v1')).tasks.filter(task=>task.title==='매월 생활 점검').map(task=>task.date)"),['2025-01-31','2025-02-28','2025-03-31']);
+  await evaluate("location.hash='records'");
+  await waitFor("document.querySelector('[data-connections]')");
+  await evaluate("(()=>{const id=JSON.parse(localStorage.getItem('imamttae:v1')).tasks.find(task=>task.title==='매월 생활 점검').id;document.querySelector('[data-toggle=\"'+id+'\"]').click()})()");
+  assert.equal(await evaluate("JSON.parse(localStorage.getItem('imamttae:v1')).tasks.filter(task=>task.title==='매월 생활 점검' && task.done).length"),1,'recurring instances complete independently');
+  const diaryPath=path.join(output,'diary-fixture.csv');
+  await writeFile(diaryPath,'date,text\n2025-11-23,"가져온 일기\n두 줄 기록"');
+  async function selectDiary() {
+    await evaluate("document.querySelector('[data-connections]').click()");
+    const {root}=await cdp('DOM.getDocument');
+    const {nodeId}=await cdp('DOM.querySelector',{nodeId:root.nodeId,selector:'#diary-file'});
+    await cdp('DOM.setFileInputFiles',{nodeId,files:[diaryPath]});
+    await waitFor("document.querySelector('#diary-import-form')");
+  }
+  await selectDiary();
+  await evaluate("document.querySelector('#diary-import-form').requestSubmit()");
+  assert.equal(await evaluate("JSON.parse(localStorage.getItem('imamttae:v1')).entries.filter(entry=>entry.text.includes('가져온 일기')).length"),1);
+  await selectDiary();
+  assert.equal(await evaluate("document.querySelector('#diary-import-form button[type=submit]').disabled"),true,'diary reimport deduplicates');
+  await evaluate("document.querySelector('[data-close]').click();document.querySelector('[data-journal-filter=expenses]').click();document.querySelector('#expense-month').value='2025-11';document.querySelector('#expense-month').dispatchEvent(new Event('change',{bubbles:true}))");
+  assert.ok(await evaluate("document.querySelector('.expense-total').textContent.includes('4,500')"));
+  await evaluate("document.querySelector('[data-weather]').click();document.querySelector('#weather-date').value='2025-11-23';document.querySelector('#weather-form').requestSubmit()");
+  await waitFor("document.querySelector('[data-save-weather]')");
+  assert.ok(await evaluate("document.querySelector('.weather-result').textContent.includes('再') || document.querySelector('.weather-result').textContent.includes('재분석')"));
+  await evaluate("document.querySelector('[data-save-weather]').click()");
+  assert.equal(await evaluate("JSON.parse(localStorage.getItem('imamttae:v1')).memories.filter(item=>item.id==='weather:seoul:2025-11-23').length"),1);
+  await evaluate("document.querySelector('[data-journal-filter=calendar]').click()");
+  const seriesId=await evaluate("JSON.parse(localStorage.getItem('imamttae:v1')).tasks.find(task=>task.title==='매월 생활 점검').seriesId");
+  await evaluate("(()=>{const id=JSON.parse(localStorage.getItem('imamttae:v1')).tasks.find(task=>task.title==='매월 생활 점검').id;document.querySelector('[data-delete-task=\"'+id+'\"]').click();document.querySelector('[data-delete-series]').click()})()");
+  assert.ok(await evaluate("document.querySelector('#modal-content').textContent.includes('3개')"));
+  await evaluate("document.querySelector('[data-confirm-series]').click()");
+  assert.equal(await evaluate(`JSON.parse(localStorage.getItem('imamttae:v1')).tasks.filter(task=>task.seriesId==='${seriesId}').length`),0,'confirmed recurring group deletion');
   await evaluate("localStorage.removeItem('imamttae:v1')");
   await cdp('Emulation.setDeviceMetricsOverride',{width:1440,height:1100,deviceScaleFactor:1,mobile:false});
   await cdp('Page.navigate',{url:`${origin}/preview?device=iphone16&month=4`});
@@ -298,10 +335,22 @@ try {
   await evaluate("document.querySelector('#app-preview').contentDocument.querySelector('[data-close]').click();document.querySelector('#season').value='1';document.querySelector('#season').dispatchEvent(new Event('change'))");
   await waitFor("document.querySelector('#app-preview').contentWindow.location.search.includes('previewMonth=1') && document.querySelector('#app-preview').contentDocument.querySelector('.calendar-grid')");
   assert.equal(await evaluate("document.querySelector('#app-preview').contentWindow.location.hash"),'#calendar','changing preview settings preserves app page');
+  await evaluate("document.querySelector('#app-preview').contentDocument.querySelector('[data-add-task]').click();document.querySelector('#app-preview').contentDocument.querySelector('#task-repeat').value='weekly';document.querySelector('#app-preview').contentDocument.querySelector('#task-repeat').dispatchEvent(new Event('change',{bubbles:true}))");
+  assert.equal(await evaluate("document.querySelector('#app-preview').contentDocument.querySelector('#task-until').required"),true);
+  const featureShot=await cdp('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
+  await writeFile(path.join(output,'device-recurring-tasks.png'),Buffer.from(featureShot.data,'base64'));
+  await evaluate("document.querySelector('#app-preview').contentDocument.querySelector('[data-close]').click()");
+  await evaluate("document.querySelector('#app-preview').contentDocument.querySelector('a[href=\"#records\"]').click()");
+  await waitFor("document.querySelector('#app-preview').contentDocument.querySelector('[data-weather]')");
+  await evaluate("document.querySelector('#app-preview').contentDocument.querySelector('[data-weather]').click();document.querySelector('#app-preview').contentDocument.querySelector('#weather-form').requestSubmit()");
+  await waitFor("document.querySelector('#app-preview').contentDocument.querySelector('[data-save-weather]')");
+  const weatherShot=await cdp('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
+  await writeFile(path.join(output,'device-weather-demo.png'),Buffer.from(weatherShot.data,'base64'));
+  await evaluate("document.querySelector('#app-preview').contentDocument.querySelector('[data-close]').click()");
   await cdp('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
   assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'),true,'preview controls fit a narrow browser');
   assert.deepEqual(errors,[],'uncaught browser exceptions');
-  console.log('PASS: app workflows, mock Naver connector, 3 device frames with exact iframe sizes, interactive preview, theme isolation, narrow layout. Live Naver account was not used. Screenshots: test-results/');
+  console.log('PASS: recurring tasks/atomic save/group deletion, expense month summary, diary CSV/deduplication, mock weather query/save, existing app/Naver workflows, 3 interactive device frames. Live Naver account was not used. Screenshots: test-results/');
 } finally {
   socket?.close();
   browser.kill();

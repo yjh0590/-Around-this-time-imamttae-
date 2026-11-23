@@ -391,6 +391,17 @@ h2 {
 .memory-photo {display:block;width:100%;max-height:280px;object-fit:cover;border-radius:12px;}
 .full-photo {display:block;width:100%;max-height:60dvh;object-fit:contain;border-radius:12px;}
 .expense-amount {font-size:21px;font-weight:650;letter-spacing:-.6px;margin:8px 0;}
+.expense-summary #expense-month {width:135px;font-size:11px;padding:7px;border-radius:10px;}
+.expense-total {font-size:30px;letter-spacing:-1px;font-weight:650;margin:15px 0 6px;overflow-wrap:anywhere;}
+.expense-total span {font-size:13px;margin-left:5px;font-weight:400;}
+.expense-comparison {display:grid;grid-template-columns:1fr 1fr;gap:10px;background:var(--tint);border-radius:12px;padding:15px;margin-top:15px;}
+.expense-comparison span {font-size:11px;color:#818a77;min-width:0;}
+.expense-comparison strong {display:block;font-size:14px;font-weight:600;color:#4a5543;margin-top:7px;overflow-wrap:anywhere;}
+.repeat-label {display:block;font-size:10px;color:var(--accent);margin-top:3px;}
+.weather-result {margin-top:22px;border-top:1px solid #e5e9dd;padding-top:20px;}
+.weather-result h3 {font-size:27px;letter-spacing:-1px;margin:14px 0;}
+.weather-result h3 span {font-size:18px;color:#9ba48d;}
+.weather-result p {font-size:12px;line-height:1.8;}
 .world-note {padding:19px;background:var(--tint);border-radius:16px;margin-top:22px;}
 .world-note strong {font-size:13px;font-weight:600;}
 .world-note p {font-size:11px;line-height:1.9;color:#737f68;}
@@ -611,5 +622,6 @@ html[data-device-preview] .app-shell {max-width:none;min-height:100dvh;border:0;
 html[data-device-preview] .app-header {padding-top:calc(12px + var(--device-safe-top))}
 html[data-device-preview] main {padding-bottom:calc(112px + var(--device-safe-bottom))}
 html[data-device-preview] .bottom-nav {bottom:0;border-radius:0;width:100%;padding-bottom:calc(12px + var(--device-safe-bottom))}
-html[data-device-preview] dialog {max-height:calc(100dvh - var(--device-safe-top) - var(--device-safe-bottom) - 32px)}
+html[data-device-preview] dialog {max-height:calc(100dvh - var(--device-safe-top) - var(--device-safe-bottom) - 32px);scrollbar-width:none}
+html[data-device-preview] dialog::-webkit-scrollbar {display:none}
 html[data-device-preview] .toast {bottom:calc(100px + var(--device-safe-bottom))}

@@ -1,6 +1,8 @@
 import { SEASONS, MONTH_NOTES, seasonForMonth, dateKey, localDate, calendarCells, sanitizeState, isDateKey, parseBackup, mergeBackup, CATEGORIES, timelineItems, lastYearRange, safeLink } from './data.js';
-import { parseCalendar, parseExpenses, preparePhoto } from './imports.js';
-import { journalShell, journalResults, memoryCard, connectionsContent, sourcePreview } from './journal.js';
+import { parseCalendar, parseExpenses, parseDiary, preparePhoto } from './imports.js';
+import { journalShell, journalResults, memoryCard, connectionsContent, sourcePreview,expensePanel,diaryConnectionContent,diaryPreview } from './journal.js';
+import {REPEATS,scheduleDates} from './planning.js';
+import {WEATHER_REGIONS,WEATHER_SOURCE,weatherDescription} from './weather-data.js';
 import {naverStatus,naverCalendars,syncNaver,naverPanel,calendarChoices} from './naver.js';
 import {DEVICES,previewOptions} from './devices.js';
 
@@ -38,6 +40,9 @@ let pendingImport = null;
 let pendingSource = null;
 let journalFilter = 'all';
 let journalRange = null;
+let expenseMonth=dateKey(new Date()).slice(0,7);
+let pendingDiary=null;
+let pendingWeather=null;
 let naverRunning=false;
 let naverConfigured=false;
 let lastAutoAttempt='';
@@ -56,12 +61,12 @@ function toast(message) {
 }
 function save(nextState = state) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState)); return true; }
-  catch { toast('저장 공간을 사용할 수 없어 이번 화면에서만 유지돼요.'); return false; }
+  catch { toast('저장하지 못했어요. 브라우저 저장 공간을 확인해 주세요.'); return false; }
 }
 function tasksFor(date) { return state.tasks.filter(task => task.date === date); }
 function taskRows(date, id) {
   const tasks = tasksFor(date).filter(task => !id || task.id === id);
-  return tasks.length ? tasks.map(task => `<div class="task-row ${task.done ? 'done' : ''}"><button class="task-toggle" data-toggle="${escapeHTML(task.id)}" aria-pressed="${task.done}" aria-label="${escapeHTML(task.title)} 완료">${task.done ? icon('check') : ''}</button><button class="task-title" data-edit-task="${escapeHTML(task.id)}" aria-label="${escapeHTML(task.title)} 수정">${escapeHTML(task.title)}</button><button class="delete-button" data-delete-task="${escapeHTML(task.id)}" aria-label="${escapeHTML(task.title)} 삭제">${icon('bin')}</button></div>`).join('') : '<p class="empty">아직 챙길 일이 없어요.<br>나를 위한 작은 할 일을 담아보세요.</p>';
+  return tasks.length ? tasks.map(task => `<div class="task-row ${task.done ? 'done' : ''}"><button class="task-toggle" data-toggle="${escapeHTML(task.id)}" aria-pressed="${task.done}" aria-label="${escapeHTML(task.title)} 완료">${task.done ? icon('check') : ''}</button><button class="task-title" data-edit-task="${escapeHTML(task.id)}" aria-label="${escapeHTML(task.title)} 수정">${escapeHTML(task.title)}${task.repeat ? `<span class="repeat-label">${REPEATS[task.repeat]} · 반복 일정</span>` : ''}</button><button class="delete-button" data-delete-task="${escapeHTML(task.id)}" aria-label="${escapeHTML(task.title)} 삭제">${icon('bin')}</button></div>`).join('') : '<p class="empty">아직 챙길 일이 없어요.<br>나를 위한 작은 할 일을 담아보세요.</p>';
 }
 function completionSummary() {
   const tasks = tasksFor(todayKey());
@@ -104,18 +109,21 @@ function renderCalendar() {
   }).join('')}</div></section><div class="card-head selected-heading"><h2>${fullDate(selectedDate)}</h2><button class="small-button" data-add-task="${selected}">${icon('plus')} 일정</button></div><section class="card">${taskRows(selected)}</section><div class="card-head selected-heading"><h2>이날의 기록</h2><button class="small-button" data-add-record="${selected}">${icon('plus')} 기록</button></div>${state.entries.filter(e => e.date === selected).map(recordCard).join('') || '<p class="empty">이날의 순간을 한 줄로 남겨보세요.</p>'}${state.memories.filter(memory=>memory.date === selected && state.categories.includes(memory.type)).map(memoryCard).join('')}`;
 }
 function recordCard(entry) {
-  return `<article class="card record-card"><div class="record-head"><time datetime="${escapeHTML(entry.date)}">${escapeHTML(entry.date.replaceAll('-', '. '))}</time><div class="record-actions"><button class="delete-button" data-edit-record="${escapeHTML(entry.id)}" aria-label="${escapeHTML(entry.date)} 기록 수정">${icon('records')}</button><button class="delete-button" data-delete-record="${escapeHTML(entry.id)}" aria-label="${escapeHTML(entry.date)} 기록 삭제">${icon('bin')}</button></div></div><p>${escapeHTML(entry.text)}</p></article>`;
+  return `<article class="card record-card"><div class="record-head"><time datetime="${escapeHTML(entry.date)}">${escapeHTML(entry.date.replaceAll('-', '. '))}</time><div class="record-actions"><button class="delete-button" data-edit-record="${escapeHTML(entry.id)}" aria-label="${escapeHTML(entry.date)} 기록 수정">${icon('records')}</button><button class="delete-button" data-delete-record="${escapeHTML(entry.id)}" aria-label="${escapeHTML(entry.date)} 기록 삭제">${icon('bin')}</button></div></div><p>${escapeHTML(entry.text)}</p>${entry.source ? `<p class="source-caption">${escapeHTML(entry.source)}</p>` : ''}</article>`;
 }
 function renderRecords() {
   if (journalFilter !== 'all' && !state.categories.includes(journalFilter)) journalFilter = 'all';
   main.innerHTML = journalShell(state, recordQuery, journalFilter);
+  if(journalFilter==='expenses') document.querySelector('#record-search').insertAdjacentHTML('beforebegin',expensePanel(state,expenseMonth));
+  const world=main.querySelector('.world-note');if(world) world.insertAdjacentHTML('beforeend','<button class="small-button" data-weather>그날의 날씨 찾기 ↗</button>');
   if (journalRange) document.querySelector('#record-search').insertAdjacentHTML('beforebegin', `<div class="preview-banner"><span>작년 이맘때 · ${journalRange.start} ~ ${journalRange.end}</span><button data-clear-range>전체 기간</button></div>`);
   renderRecordResults();
 }
 function renderRecordResults() {
   const results = document.querySelector('#record-results');
   if (!results) return;
-  const filteredState = journalRange ? {...state,tasks:state.tasks.filter(item=>inRange(item)),entries:state.entries.filter(item=>inRange(item)),memories:state.memories.filter(item=>inRange(item))} : state;
+  let filteredState = journalRange ? {...state,tasks:state.tasks.filter(item=>inRange(item)),entries:state.entries.filter(item=>inRange(item)),memories:state.memories.filter(item=>inRange(item))} : state;
+  if(journalFilter==='expenses') filteredState={...filteredState,memories:filteredState.memories.filter(item=>item.date.startsWith(expenseMonth))};
   const result = journalResults(filteredState, recordQuery, journalFilter, recordCard, taskRows);
   document.querySelector('#search-count').textContent = `${result.count}개의 기록을 모았어요.`;
   results.innerHTML = result.html;
@@ -127,6 +135,8 @@ function openModal(title, body) {
 }
 function openTask(date, title = '', id = '') {
   openModal(id ? '챙길 일 수정' : '챙길 일 담기', `<form id="task-form"><input type="hidden" name="entryId" value="${escapeHTML(id)}"><label for="task-title">어떤 일을 챙길까요?</label><input id="task-title" name="title" maxlength="100" required placeholder="예: 겨울 침구 꺼내기" value="${escapeHTML(title)}"><label for="task-date">날짜</label><input id="task-date" name="date" type="date" min="0001-01-01" max="9999-12-31" required value="${date}"><button class="primary-button full" type="submit">${id ? '수정한 내용 저장' : '달력에 담기'}</button><p class="field-hint">선택한 날짜에 저장돼요. 알림 기능은 아직 제공하지 않아요.</p></form>`);
+  const submit=document.querySelector('#task-form button[type=submit]');
+  submit.insertAdjacentHTML('beforebegin',id ? '<p class="field-hint">반복해서 만든 일정도 선택한 한 건만 수정해요.</p><p class="form-error" id="task-error" role="alert"></p>' : `<label for="task-repeat">반복</label><select id="task-repeat" name="repeat">${Object.entries(REPEATS).map(([key,label])=>`<option value="${key}">${label}</option>`).join('')}</select><label for="task-until">반복 종료일</label><input id="task-until" name="until" type="date" min="${date}" max="9999-12-31" disabled><p class="field-hint">종료일까지 최대 366개의 일정을 만들어요. 매월·매년 반복 시 없는 날짜는 그달 말일로 맞춰요.</p><p class="form-error" id="task-error" role="alert"></p>`);
 }
 function openRecord(date, text = '', id = '') {
   openModal(id ? '기록 수정' : '오늘의 한 줄', `<form id="record-form"><input type="hidden" name="entryId" value="${escapeHTML(id)}"><label for="record-date">기억할 날짜</label><input id="record-date" name="date" type="date" min="0001-01-01" max="9999-12-31" required value="${date}"><label for="record-text">어떤 순간을 남길까요?</label><textarea id="record-text" name="text" maxlength="1000" required placeholder="오늘 바람에서 겨울 냄새가 났다.">${escapeHTML(text)}</textarea><p class="character-count" id="character-count">${text.length}/1000</p><button class="primary-button full" type="submit">${id ? '수정한 내용 저장' : '기록 남기기'}</button><p class="field-hint">글은 이 기기의 브라우저에만 저장돼요.</p></form>`);
@@ -169,6 +179,13 @@ async function previewSource(input) {
     } else {
       if(files[0].size > 2*1024*1024) throw new Error('2MB 이하의 파일을 선택해 주세요.');
       const text=await files[0].text();
+      if(input.id==='diary-file') {
+        const entries=await parseDiary(text,`일기 CSV · ${files[0].name}`);
+        if(!input.isConnected || !modal.open)return;
+        if(!entries.length)throw new Error('가져올 일기가 없어요.');
+        pendingDiary=entries;const ids=new Set(state.entries.map(entry=>entry.id));
+        openModal('일기를 확인해 주세요',diaryPreview(entries,entries.filter(entry=>ids.has(entry.id)).length));return;
+      }
       result=input.id === 'calendar-file' ? parseCalendar(text,files[0].name) : await parseExpenses(text,files[0].name);
     }
     if(!input.isConnected || !modal.open) return;
@@ -184,6 +201,44 @@ function openMemoryForm(type, item) {
   const labels={expenses:'지출',photos:'사진',calendar:'가져온 일정',world:'그 무렵의 세상'};
   openModal(`${labels[type]} ${item ? '수정' : '남기기'}`,`<form id="memory-form"><input name="memoryId" type="hidden" value="${escapeHTML(item?.id || '')}"><input name="memoryType" type="hidden" value="${type}"><label for="memory-date">기억할 날짜</label><input id="memory-date" name="date" type="date" min="0001-01-01" max="9999-12-31" value="${item?.date || todayKey()}" required><label for="memory-title">내용</label><input id="memory-title" name="title" maxlength="200" value="${escapeHTML(item?.title || '')}" required>${type === 'expenses' ? `<label for="memory-amount">지출 금액 · 원</label><input id="memory-amount" name="amount" type="number" min="1" max="1000000000000" step="1" value="${item?.amount || ''}" required>` : ''}${type === 'world' ? `<label for="memory-source">출처 이름</label><input id="memory-source" name="source" maxlength="200" value="${escapeHTML(item?.source || '')}" required><label for="memory-url">출처 링크</label><input id="memory-url" name="url" type="url" value="${escapeHTML(item?.url || '')}" required><p class="field-hint">직접 확인한 날씨·사건·뉴스를 남겨요. 외부 자료는 자동으로 수집하거나 요약하지 않아요.</p>` : ''}<label for="memory-note">메모</label><textarea id="memory-note" name="text" maxlength="2000">${escapeHTML(item?.text || '')}</textarea><p id="source-error" class="form-error" role="alert"></p><button type="submit" class="primary-button full">저장하기</button></form>`);
 }
+function openWeather() {
+  pendingWeather=null;
+  const date=lastYearRange(new Date(),0).anchor;
+  const latest=new Date();latest.setDate(latest.getDate()-7);
+  openModal('그날의 날씨',`<form id="weather-form"><label for="weather-date">기억할 날짜</label><input id="weather-date" name="date" type="date" min="1940-01-01" max="${dateKey(latest)}" value="${date}" required><label for="weather-region">그때 있던 지역</label><select id="weather-region" name="region">${Object.entries(WEATHER_REGIONS).map(([id,region])=>`<option value="${id}">${region.name} · 대표 좌표</option>`).join('')}</select><p class="field-hint">조회하면 선택한 날짜와 지역 대표 좌표를 Open-Meteo로 보내요. 당시 내 위치는 자동으로 추정하지 않아요. 제공되는 재분석 자료는 관측소의 실제 측정값과 다를 수 있어요.</p><p id="weather-error" class="form-error" role="alert"></p><button type="submit" class="primary-button full">과거 날씨 조회</button></form><div id="weather-result"></div>`);
+}
+async function queryWeather(form) {
+  const error=document.querySelector('#weather-error');const result=document.querySelector('#weather-result');const button=form.querySelector('button');
+  pendingWeather=null;result.innerHTML='';button.disabled=true;button.textContent='날씨를 확인하고 있어요…';error.textContent='';
+  try {
+    const data=new FormData(form);const date=data.get('date'),region=data.get('region');
+    const response=await fetch('/api/weather/history',{method:'POST',headers:{'Content-Type':'application/json','X-Imamttae-Request':'1'},body:JSON.stringify({date,region})});
+    const weather=await response.json();
+    if(!result.isConnected || !modal.open)return;
+    if(!response.ok)throw new Error(weather.error || '날씨를 확인하지 못했어요.');
+    if(weather.date!==date || weather.regionId!==region || !Object.hasOwn(WEATHER_REGIONS,region) || ![weather.minimum,weather.maximum,weather.precipitation].every(value=>typeof value==='number' && Number.isFinite(value)))throw new Error('날씨 자료를 확인하지 못했어요.');
+    pendingWeather={...weather,regionLabel:WEATHER_REGIONS[region].name};
+    result.innerHTML=`<section class="weather-result"><p class="eyebrow">${weather.date} · ${WEATHER_REGIONS[region].name} 대표 좌표</p><h3>${weather.minimum}°C <span>~</span> ${weather.maximum}°C</h3><p>하루 강수량 ${weather.precipitation}mm</p><p class="field-hint">Open-Meteo · ERA5 재분석 · 기온 °C / 강수 mm<br>해당 지역 대표 좌표의 자료예요.</p><a class="source-link" href="${WEATHER_SOURCE}" target="_blank" rel="noopener noreferrer">자료 출처와 설명 ↗</a><button class="primary-button full" data-save-weather>이 날짜의 기록으로 담기</button></section>`;
+  }catch(problem){if(error.isConnected)error.textContent=problem.message || '조회에 실패했어요. 잠시 후 다시 시도해 주세요.';}
+  finally{button.disabled=false;button.textContent='과거 날씨 조회';}
+}
+function saveWeather() {
+  if(!pendingWeather)return;
+  const weather=pendingWeather;
+  const memory={id:`weather:${weather.regionId}:${weather.date}`,type:'world',date:weather.date,title:`${weather.regionLabel} · 그날의 날씨`,text:`${weatherDescription(weather)}\n조회일: ${todayKey()}`,source:'Open-Meteo · ERA5 재분석',url:WEATHER_SOURCE};
+  const merged=mergeBackup(state,{tasks:[],entries:[],memories:[memory]});
+  if(!save(merged.state)){document.querySelector('#weather-error').textContent='저장하지 못했어요. 기존 기록은 유지했어요.';return;}
+  state=merged.state;pendingWeather=null;modal.close();render();toast(merged.addedMemories ? '그날의 날씨를 기록에 담았어요.' : '이미 기록한 지역과 날짜예요. 기존 기록을 유지했어요.');
+}
+document.addEventListener('submit',event=>{
+  if(event.target.id==='weather-form'){event.preventDefault();queryWeather(event.target);}
+  else if(event.target.id==='diary-import-form') {
+    event.preventDefault();if(!pendingDiary)return;
+    const merged=mergeBackup(state,{tasks:[],entries:pendingDiary,memories:[]});
+    if(!save(merged.state)){document.querySelector('#diary-error').textContent='일기를 저장하지 못했어요. 기존 기록은 유지했어요.';return;}
+    state=merged.state;pendingDiary=null;recordQuery='';modal.close();render();toast(`일기 ${merged.addedEntries}개를 가져왔어요.`);
+  }
+});
 document.addEventListener('submit',event=>{
   if(!['source-form','memory-form'].includes(event.target.id)) return;
   event.preventDefault();
@@ -221,7 +276,7 @@ document.addEventListener('submit',event=>{
   state=next;pendingSource=null;modal.close();render();toast('나의 기록에 담았어요.');
 });
 async function openConnections() {
-  openModal('기록 연결',connectionsContent(state)+naverPanel(state));
+  openModal('기록 연결',connectionsContent(state)+diaryConnectionContent()+naverPanel(state));
   const status=document.querySelector('#naver-status');
   try {
     const result=await naverStatus();
@@ -282,7 +337,7 @@ function readPage() {
 }
 document.querySelector('#settings-button').innerHTML = icon('settings');
 document.querySelector('#settings-button').addEventListener('click', openSettings);
-modal.addEventListener('close', () => { if (!modal.open) { pendingImport = null; pendingSource = null; } });
+modal.addEventListener('close', () => { if (!modal.open) { pendingImport = null; pendingSource = null;pendingDiary=null;pendingWeather=null; } });
 window.addEventListener('hashchange', () => { readPage(); main.focus(); window.scrollTo(0, 0); });
 document.addEventListener('visibilitychange', () => { if (!document.hidden && !modal.open) {render();maybeAutoNaver();} });
 document.addEventListener('click', event => {
@@ -293,6 +348,8 @@ document.addEventListener('click', event => {
   else if ('connections' in d) openConnections();
   else if ('naverList' in d) loadNaverCalendars(button);
   else if ('naverSync' in d) runNaverSync();
+  else if ('weather' in d) openWeather();
+  else if ('saveWeather' in d) saveWeather();
   else if ('journalFilter' in d) { journalFilter=d.journalFilter; renderRecords(); }
   else if ('showLastyear' in d) { journalRange=lastYearRange(new Date()); recordQuery=''; journalFilter='all'; if(location.hash === '#records') renderRecords(); else location.hash='records'; }
   else if ('clearRange' in d) { journalRange=null; renderRecords(); }
@@ -316,14 +373,16 @@ document.addEventListener('click', event => {
     pendingImport = null;
     modal.close(); render(); toast(`${result.addedTasks+result.addedEntries+result.addedMemories}개의 기록을 가져왔어요.`);
   }
-  else if ('toggle' in d) { const task = state.tasks.find(t => t.id === d.toggle); if (task) { task.done = !task.done; save(); render(); } }
+  else if ('toggle' in d) {const next={...state,tasks:state.tasks.map(task=>task.id===d.toggle ? {...task,done:!task.done} : task)};if(save(next)){state=next;render();}}
   else if ('deleteTask' in d) {
     const task = state.tasks.find(t => t.id === d.deleteTask);
-    if (task) openModal('할 일을 삭제할까요?', `<p class="modal-text">${escapeHTML(task.title)}</p><button class="primary-button full" data-confirm-task="${escapeHTML(task.id)}">삭제하기</button>`);
+    if (task) openModal('할 일을 삭제할까요?', `<p class="modal-text">${escapeHTML(task.title)}</p><button class="primary-button full" data-confirm-task="${escapeHTML(task.id)}">선택한 일정만 삭제</button>${task.seriesId ? `<button class="small-button full" data-delete-series="${escapeHTML(task.seriesId)}">이 반복 일정 전체 삭제…</button>` : ''}`);
   }
-  else if ('confirmTask' in d) { state.tasks = state.tasks.filter(t => t.id !== d.confirmTask); save(); modal.close(); render(); }
+  else if ('deleteSeries' in d) openModal('반복 일정 전체를 삭제할까요?',`<p class="modal-text">이 묶음의 ${state.tasks.filter(task=>task.seriesId===d.deleteSeries).length}개 일정을 삭제해요. 완료한 과거 일정도 포함되며 되돌릴 수 없어요.</p><button class="primary-button full" data-confirm-series="${escapeHTML(d.deleteSeries)}">반복 일정 전체 삭제</button>`);
+  else if ('confirmSeries' in d) {const next={...state,tasks:state.tasks.filter(task=>task.seriesId!==d.confirmSeries)};if(save(next)){state=next;modal.close();render();}}
+  else if ('confirmTask' in d) {const next={...state,tasks:state.tasks.filter(t=>t.id!==d.confirmTask)};if(save(next)){state=next;modal.close();render();}}
   else if ('deleteRecord' in d) openModal('기록을 삭제할까요?', `<p class="modal-text">삭제한 기록은 되돌릴 수 없어요.</p><button class="primary-button full" data-confirm-record="${escapeHTML(d.deleteRecord)}">삭제하기</button>`);
-  else if ('confirmRecord' in d) { state.entries = state.entries.filter(e => e.id !== d.confirmRecord); save(); modal.close(); render(); }
+  else if ('confirmRecord' in d) {const next={...state,entries:state.entries.filter(e=>e.id!==d.confirmRecord)};if(save(next)){state=next;modal.close();render();}}
   else if ('calendarMove' in d) {
     const target = localDate(calendarDate.getFullYear(), calendarDate.getMonth() + Number(d.calendarMove));
     if (target.getFullYear() < 1 || target.getFullYear() > 9999) return;
@@ -339,14 +398,17 @@ document.addEventListener('click', event => {
   }
   else if ('storyTask' in d) { modal.close(); openTask(todayKey(), theme().action); }
   else if ('export' in d) {
-    const url = URL.createObjectURL(new Blob([JSON.stringify({ version:2, ...state }, null, 2)], { type:'application/json' }));
+    const url = URL.createObjectURL(new Blob([JSON.stringify({ version:3, ...state }, null, 2)], { type:'application/json' }));
     const link = document.createElement('a'); link.href = url; link.download = `imamttae-${todayKey()}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 });
 document.addEventListener('change', event => {
   if (event.target.id === 'month-select') { state.month = Number(event.target.value) || null; save(); render(); }
   else if (event.target.id === 'backup-file') previewBackup(event.target.files[0]);
-  else if (['calendar-file','expense-file','photo-files'].includes(event.target.id)) previewSource(event.target);
+  else if (['calendar-file','expense-file','photo-files','diary-file'].includes(event.target.id)) previewSource(event.target);
+  else if(event.target.id==='expense-month' && /^\d{4}-(0[1-9]|1[0-2])$/.test(event.target.value)) {expenseMonth=event.target.value;renderRecords();}
+  else if(event.target.id==='task-repeat') {const until=document.querySelector('#task-until');until.disabled=event.target.value==='none';until.required=!until.disabled;}
+  else if(event.target.id==='task-date' && document.querySelector('#task-until')) document.querySelector('#task-until').min=event.target.value;
   else if (event.target.matches('[data-naver-calendar]')) {
     const ids=[...document.querySelectorAll('[data-naver-calendar]:checked')].map(input=>input.dataset.naverCalendar);
     if(ids.length>10) {event.target.checked=false;document.querySelector('#naver-error').textContent='한 번에 최대 10개까지 선택할 수 있어요.';return;}
@@ -380,19 +442,25 @@ document.addEventListener('submit', event => {
     field.addEventListener('input', () => field.setCustomValidity(''), { once:true }); return;
   }
   const id = data.get('entryId');
+  let next;
   if (event.target.id === 'task-form') {
     const task = state.tasks.find(t => t.id === id);
     if (id && !task) return;
-    if (task) Object.assign(task, { date, title:value.slice(0,100) });
-    else state.tasks.push({ id:crypto.randomUUID(), date, title:value.slice(0,100), done:false });
+    if(task) next={...state,tasks:state.tasks.map(item=>item.id===id ? {...item,date,title:value.slice(0,100)} : item)};
+    else {
+      try {
+        const repeat=data.get('repeat') || 'none';const dates=scheduleDates(date,repeat,data.get('until') || date);const seriesId=crypto.randomUUID();
+        next={...state,tasks:[...state.tasks,...dates.map(date=>({id:crypto.randomUUID(),date,title:value.slice(0,100),done:false,...(repeat!=='none' ? {seriesId,repeat} : {})}))]};
+      } catch(problem){document.querySelector('#task-error').textContent=problem.message;return;}
+    }
   } else {
     const entry = state.entries.find(e => e.id === id);
     if (id && !entry) return;
-    if (entry) Object.assign(entry, { date, text:value.slice(0,1000) });
-    else state.entries.push({ id:crypto.randomUUID(), date, text:value.slice(0,1000) });
+    next={...state,entries:entry ? state.entries.map(item=>item.id===id ? {...item,date,text:value.slice(0,1000)} : item) : [...state.entries,{id:crypto.randomUUID(),date,text:value.slice(0,1000)}]};
     recordQuery = '';
   }
-  const persisted = save(); modal.close(); render(); if (persisted) toast('나의 이맘때에 담았어요.');
+  if(!save(next)) {const hint=event.target.querySelector('.field-hint');if(hint)hint.textContent='저장하지 못했어요. 기존 기록은 유지했어요. 저장 공간을 확인해 주세요.';return;}
+  state=next;modal.close();render();toast('나의 이맘때에 담았어요.');
 });
 readPage();
 maybeAutoNaver();

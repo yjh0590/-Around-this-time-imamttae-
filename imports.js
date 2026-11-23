@@ -73,6 +73,19 @@ export async function parseExpenses(text, source = '가계부 CSV') {
   }
   return {items,skipped:0};
 }
+export async function parseDiary(text,source='일기 CSV') {
+  const rows=parseCSV(text);
+  if(rows.shift()?.join(',')!=='date,text') throw new Error('일기 CSV 첫 줄은 date,text여야 해요.');
+  if(rows.length>5000) throw new Error('한 번에 5,000개 이하의 일기를 가져올 수 있어요.');
+  const entries=[];const occurrences=new Map();
+  for(const row of rows) {
+    const date=row[0]?.trim();const text=row[1]?.trim();
+    if(row.length!==2 || !isDateKey(date) || !text || text.length>1000) throw new Error('일기의 날짜와 내용을 확인해 주세요. 글은 1,000자까지 지원해요.');
+    const key=JSON.stringify([date,text]);const count=(occurrences.get(key)||0)+1;occurrences.set(key,count);
+    entries.push({id:`diary:${await digest(`${key}:${count}`)}`,date,text,source:source.slice(0,200)});
+  }
+  return entries;
+}
 export async function digest(value) {
   const bytes = typeof value === 'string' ? new TextEncoder().encode(value) : value;
   return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),byte => byte.toString(16).padStart(2,'0')).join('');
