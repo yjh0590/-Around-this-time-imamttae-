@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import { createServer } from '../server.mjs';
+import { lastYearRange } from '../data.js';
 
 // No browser-test dependency: Chrome DevTools Protocol over Node's WebSocket.
 const browserPath = process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
@@ -149,7 +150,76 @@ try {
   await evaluate("document.querySelector('#toast').style.transition='none'; document.querySelector('#toast').classList.remove('visible')");
   const searchScreenshot = await cdp('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
   await writeFile(path.join(output,'record-search.png'),Buffer.from(searchScreenshot.data,'base64'));
+  await evaluate("document.querySelector('#record-search').value=''; document.querySelector('#record-search').dispatchEvent(new Event('input',{bubbles:true}))");
+  const memoryDate=lastYearRange(new Date()).anchor;
+  const icsPath=path.join(output,'calendar-fixture.ics');
+  const csvPath=path.join(output,'expenses-fixture.csv');
+  const photoPath=path.join(output,'memory-photo.png');
+  await writeFile(icsPath,`BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:browser-trip\r\nDTSTART;VALUE=DATE:${memoryDate.replaceAll('-','')}\r\nSUMMARY:작년의 여행\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nUID:repeat\r\nDTSTART;VALUE=DATE:${memoryDate.replaceAll('-','')}\r\nSUMMARY:반복 일정\r\nRRULE:FREQ=WEEKLY\r\nEND:VEVENT\r\nEND:VCALENDAR`);
+  await writeFile(csvPath,`date,title,amount\n${memoryDate},여행 커피,4500`);
+  const photoData=await evaluate("(()=>{const canvas=document.createElement('canvas');canvas.width=160;canvas.height=100;const context=canvas.getContext('2d');context.fillStyle='#cbd9bd';context.fillRect(0,0,160,100);return canvas.toDataURL('image/png').split(',')[1]})()");
+  await writeFile(photoPath,Buffer.from(photoData,'base64'));
+  async function selectSource(selector,file) {
+    await evaluate("document.querySelector('[data-connections]').click()");
+    const {root}=await cdp('DOM.getDocument');
+    const {nodeId}=await cdp('DOM.querySelector',{nodeId:root.nodeId,selector});
+    await cdp('DOM.setFileInputFiles',{nodeId,files:[file]});
+    await waitFor("document.querySelector('#source-form')");
+  }
+  await selectSource('#calendar-file',icsPath);
+  assert.ok(await evaluate("document.querySelector('.import-notice').textContent.includes('1개')"),'recurrence exclusions are visible');
+  const beforeCalendar=await evaluate("JSON.parse(localStorage.getItem('imamttae:v1')).memories.length");
+  await evaluate("document.querySelector('[data-close]').click()");
+  assert.equal(await evaluate("JSON.parse(localStorage.getItem('imamttae:v1')).memories.length"),beforeCalendar,'source preview cancellation preserves data');
+  await selectSource('#calendar-file',icsPath);
+  await evaluate("document.querySelector('#source-form').requestSubmit()");
+  assert.ok(await evaluate("[...document.querySelectorAll('.memory-card h3')].some(node=>node.textContent==='작년의 여행')"));
+  await selectSource('#calendar-file',icsPath);
+  await evaluate("document.querySelector('#source-form').requestSubmit()");
+  assert.equal(await evaluate("JSON.parse(localStorage.getItem('imamttae:v1')).memories.length"),beforeCalendar+1,'ICS reimport deduplicates');
+  await selectSource('#expense-file',csvPath);
+  await evaluate("document.querySelector('#source-form').requestSubmit()");
+  assert.equal(await evaluate("document.querySelector('.expense-amount').textContent"),'4,500원');
+  await selectSource('#photo-files',photoPath);
+  assert.equal(await evaluate("document.querySelector('[data-photo-date]').value"),'','missing EXIF must not use file modification time');
+  await evaluate("document.querySelector('#source-form').requestSubmit()");
+  assert.equal(await evaluate("document.querySelector('#modal').open"),true,'photo date must be confirmed');
+  await evaluate(`document.querySelector('[data-photo-date]').value='${memoryDate}'; document.querySelector('#source-form').requestSubmit()`);
+  assert.equal(await evaluate("document.querySelectorAll('.memory-photo').length"),1);
+  const v2Backup=await evaluate("JSON.stringify({version:2,...JSON.parse(localStorage.getItem('imamttae:v1'))})");
+  const v2Path=path.join(output,'version2-backup.json');
+  await writeFile(v2Path,v2Backup);
+  await selectBackup(v2Path);
+  await waitFor("document.querySelector('[data-confirm-import]')");
+  assert.equal(await evaluate("document.querySelector('[data-confirm-import]').disabled"),true,'version 2 photo backup round-trip');
+  await evaluate("document.querySelector('[data-close]').click(); document.querySelector('[data-journal-filter=photos]').click()");
+  assert.equal(await evaluate("document.querySelectorAll('.memory-card').length"),1,'photo filter');
+  assert.equal(await evaluate("document.querySelectorAll('.record-card').length"),0,'photo filter excludes diary');
+  await evaluate("document.querySelector('[data-open-photo]').click()");
+  assert.ok(await evaluate("document.querySelector('.full-photo').src.startsWith('data:image/jpeg;base64,')"));
+  await evaluate("document.querySelector('[data-close]').click(); document.querySelector('[data-connections]').click(); document.querySelector('[data-category=photos]').click(); document.querySelector('[data-close]').click()");
+  assert.equal(await evaluate("document.querySelector('[data-journal-filter=photos]')"),null,'disabled category is hidden');
+  assert.equal(await evaluate("JSON.parse(localStorage.getItem('imamttae:v1')).memories.filter(item=>item.type==='photos').length"),1,'disabling category never deletes photos');
+  await cdp('Page.reload');
+  await waitFor("document.querySelector('[data-connections]')");
+  assert.equal(await evaluate("document.querySelector('[data-journal-filter=photos]')"),null,'category selection persists after reload');
+  await evaluate("document.querySelector('[data-connections]').click(); document.querySelector('[data-category=photos]').click(); document.querySelector('[data-close]').click(); document.querySelector('[data-add-world]').click()");
+  await evaluate(`document.querySelector('#memory-date').value='${memoryDate}'; document.querySelector('#memory-title').value='기억에 남는 소식'; document.querySelector('#memory-source').value='직접 고른 출처'; document.querySelector('#memory-url').value='https://example.com/article'; document.querySelector('#memory-form').requestSubmit()`);
+  assert.equal(await evaluate("document.querySelector('.source-link').getAttribute('href')"),'https://example.com/article');
+  await evaluate("document.querySelector('#toast').style.transition='none'; document.querySelector('#toast').classList.remove('visible')");
+  const timelineShot=await cdp('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
+  await writeFile(path.join(output,'unified-timeline.png'),Buffer.from(timelineShot.data,'base64'));
   await evaluate("location.hash = 'today'");
+  await waitFor("document.querySelector('.mascot')");
+  assert.ok(await evaluate("document.querySelector('.lastyear-card').textContent.includes('작년의 여행')"),'last-year recap uses imported records');
+  await evaluate("document.querySelector('[data-show-lastyear]').click()");
+  await waitFor("document.querySelector('[data-clear-range]')");
+  assert.ok(await evaluate("document.querySelector('#record-results').textContent.includes('작년의 여행')"));
+  assert.equal(await evaluate("document.querySelectorAll('.record-card').length"),0,'last-year range excludes other years');
+  await evaluate("window.scrollTo(0,0); document.querySelector('#toast').style.transition='none'; document.querySelector('#toast').classList.remove('visible')");
+  const recapShot=await cdp('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
+  await writeFile(path.join(output,'lastyear-timeline.png'),Buffer.from(recapShot.data,'base64'));
+  await evaluate("document.querySelector('[data-clear-range]').click(); location.hash='today'");
   await waitFor("document.querySelector('.mascot')");
   for (const [month,season] of [[4,'봄'],[7,'여름'],[10,'가을'],[1,'겨울']]) {
     await evaluate(`document.querySelector('#settings-button').click(); document.querySelector('#month-select').value='${month}'; document.querySelector('#month-select').dispatchEvent(new Event('change',{bubbles:true})); document.querySelector('[data-close]').click()`);
@@ -169,7 +239,7 @@ try {
     assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'),true,`320px overflow on ${destination}`);
   }
   assert.deepEqual(errors,[],'uncaught browser exceptions');
-  console.log('PASS: mobile layout, task/record editing, completion, search, XSS escaping, persistence, calendar, backup preview/cancel/merge/deduplication/storage failure, four seasonal themes. Screenshots: test-results/');
+  console.log('PASS: editing/search/persistence, calendar, v1/v2 backups, ICS/CSV/photo imports, explicit photo dates, category filters, source links, last-year recap, storage failure, four seasons, 320px layout. Screenshots: test-results/');
 } finally {
   socket?.close();
   browser.kill();

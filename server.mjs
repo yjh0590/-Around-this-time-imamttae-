@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
-const allowed = new Set(['index.html','styles.css','app.js','data.js','assets/icon.svg','assets/seasonal-companion.png']);
+const allowed = new Set(['index.html','styles.css','app.js','data.js','imports.js','journal.js','assets/icon.svg','assets/seasonal-companion.png']);
 const types = { '.html':'text/html; charset=utf-8', '.css':'text/css; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.svg':'image/svg+xml', '.png':'image/png' };
 export function createServer() {
   return http.createServer(async (request, response) => {
@@ -15,7 +15,7 @@ export function createServer() {
     if (!allowed.has(pathname)) { response.writeHead(404).end('Not found'); return; }
     try {
       const content = await readFile(path.join(root, pathname));
-      response.writeHead(200, { 'Content-Type':types[path.extname(pathname)], 'X-Content-Type-Options':'nosniff', 'Cache-Control':'no-cache', 'Content-Security-Policy':"default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'" });
+      response.writeHead(200, { 'Content-Type':types[path.extname(pathname)], 'X-Content-Type-Options':'nosniff', 'Cache-Control':'no-cache', 'Content-Security-Policy':"default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'" });
       response.end(request.method === 'HEAD' ? undefined : content);
     } catch { response.writeHead(500).end('Unable to read file'); }
   });

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { seasonForMonth, calendarCells, dateKey, sanitizeState, isDateKey, parseBackup, mergeBackup, searchEntries } from '../data.js';
+import { seasonForMonth, calendarCells, dateKey, sanitizeState, isDateKey, parseBackup, mergeBackup, searchEntries, CATEGORIES } from '../data.js';
 import { createServer } from '../server.mjs';
 
 test('12개월 계절 경계와 잘못된 월', () => {
@@ -16,7 +16,7 @@ test('달력은 윤년과 주 시작일을 보존한다', () => {
   assert.equal(dateKey(new Date(2026,0,2)), '2026-01-02');
 });
 test('손상된 저장 상태와 미지원 필드를 안전하게 정리한다', () => {
-  assert.deepEqual(sanitizeState(null), { tasks:[], entries:[], month:null });
+  assert.deepEqual(sanitizeState(null), { tasks:[], entries:[], memories:[], categories:Object.keys(CATEGORIES), month:null });
   const value = sanitizeState({ month:13, tasks:[null,{id:'a',date:'2026-11-23',title:'할 일',done:'false'},{id:1}], entries:[{id:'b',date:'2026-11-23',text:'기록'},false] });
   assert.equal(value.tasks.length,1);
   assert.equal(value.tasks[0].done,false);
