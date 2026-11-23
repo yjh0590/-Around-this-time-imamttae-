@@ -1,6 +1,6 @@
 {
   "name": "imamttae",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": { "start": "node server.mjs", "test": "node --test", "test:browser": "node scripts/browser-check.mjs", "check": "node --check app.js && node --check data.js && node --check server.mjs" },

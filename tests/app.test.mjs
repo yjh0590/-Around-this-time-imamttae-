@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { seasonForMonth, calendarCells, dateKey, sanitizeState } from '../data.js';
+import { seasonForMonth, calendarCells, dateKey, sanitizeState, isDateKey, parseBackup, mergeBackup, searchEntries } from '../data.js';
 import { createServer } from '../server.mjs';
 
 test('12개월 계절 경계와 잘못된 월', () => {
@@ -22,6 +22,46 @@ test('손상된 저장 상태와 미지원 필드를 안전하게 정리한다',
   assert.equal(value.tasks[0].done,false);
   assert.equal(value.entries.length,1);
   assert.equal(value.month,null);
+});
+
+test('실제 존재하는 로컬 날짜만 허용한다', () => {
+  for (const value of ['2024-02-29','2026-11-23','0001-01-01','0099-12-31']) assert.equal(isDateKey(value),true,value);
+  for (const value of ['2025-02-29','2026-02-30','2026-13-01','0000-01-01','2026-1-01',null]) assert.equal(isDateKey(value),false,String(value));
+  assert.equal(sanitizeState({tasks:[{id:'a',date:'2026-02-30',title:'x'}]}).tasks.length,0);
+});
+
+test('이전 버전 백업을 읽고 잘못된 백업은 전체를 거부한다', () => {
+  const backup = { version:1, month:4, tasks:[{id:'a',date:'2026-11-23',title:'할 일',done:true}], entries:[{id:'b',date:'2026-11-23',text:'<b>문자 그대로</b>'}] };
+  assert.equal(parseBackup(JSON.stringify(backup)).tasks[0].done,true);
+  assert.equal(parseBackup(JSON.stringify(backup)).entries[0].text,'<b>문자 그대로</b>');
+  for (const invalid of [null,{...backup,version:2},{...backup,tasks:[{...backup.tasks[0],date:'2026-02-30'}]},{...backup,tasks:[{...backup.tasks[0],done:'true'}]},{...backup,entries:[{...backup.entries[0],text:' '}]},{...backup,tasks:[backup.tasks[0],backup.tasks[0]]}]) {
+    assert.throws(() => parseBackup(JSON.stringify(invalid)));
+  }
+  assert.throws(() => parseBackup('{broken'));
+});
+
+test('백업 병합은 현재 항목과 테마를 유지하며 반복 실행해도 중복되지 않는다', () => {
+  const current = {month:10,tasks:[{id:'a',date:'2026-11-23',title:'수정한 일정',done:true}],entries:[]};
+  const incoming = {month:4,tasks:[{...current.tasks[0],title:'예전 일정',done:false},{id:'b',date:'2026-11-24',title:'추가할 일정',done:false}],entries:[{id:'c',date:'2026-11-23',text:'추가할 기록'}]};
+  const before = JSON.stringify(current);
+  const result = mergeBackup(current,incoming);
+  assert.equal(result.state.month,10);
+  assert.equal(result.state.tasks[0].title,'수정한 일정');
+  assert.equal(result.state.tasks[0].done,true);
+  assert.deepEqual([result.addedTasks,result.addedEntries,result.skipped],[1,1,1]);
+  assert.equal(JSON.stringify(current),before);
+  const repeated = mergeBackup(result.state,incoming);
+  assert.deepEqual([repeated.addedTasks,repeated.addedEntries,repeated.skipped],[0,0,3]);
+});
+
+test('기록은 내용·날짜로 검색하고 원본 배열을 변경하지 않는다', () => {
+  const entries = [{id:'a',date:'2026-01-01',text:'봄을 기다리며'},{id:'b',date:'2026-11-23',text:'COZY 겨울'}];
+  assert.equal(searchEntries(entries,'봄')[0].id,'a');
+  assert.equal(searchEntries(entries,' cozy ')[0].id,'b');
+  assert.equal(searchEntries(entries,'2026-11').length,1);
+  assert.equal(searchEntries(entries,'없는 단어').length,0);
+  assert.equal(searchEntries(entries,'')[0].id,'b');
+  assert.equal(entries[0].id,'a');
 });
 test('서버는 앱 자산을 제공하고 저장소 내부 파일을 차단한다', async () => {
   const server = createServer();

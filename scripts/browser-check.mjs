@@ -64,19 +64,91 @@ try {
   assert.equal(await evaluate("document.querySelector('.task-title').textContent"),'브라우저 검증 할 일');
   await evaluate("document.querySelector('[data-toggle]').click()");
   assert.equal(await evaluate("document.querySelector('[data-toggle]').getAttribute('aria-pressed')"),'true');
+  assert.equal(await evaluate("document.querySelector('progress').value"),1,'completion summary');
+  const initialTaskId = await evaluate("JSON.parse(localStorage.getItem('imamttae:v1')).tasks[0].id");
+  await evaluate("document.querySelector('[data-edit-task]').click(); document.querySelector('#task-title').value = '수정한 할 일'; document.querySelector('#task-form').requestSubmit()");
+  assert.equal(await evaluate("document.querySelector('.task-title').textContent"),'수정한 할 일');
+  assert.equal(await evaluate("JSON.parse(localStorage.getItem('imamttae:v1')).tasks[0].id"),initialTaskId,'editing preserves task identity');
+  assert.equal(await evaluate("document.querySelector('[data-toggle]').getAttribute('aria-pressed')"),'true','editing preserves completion');
   await evaluate("document.querySelector('[data-add-record]').click()");
   await evaluate("document.querySelector('#record-text').value = '<img src=x onerror=alert(1)> 계절 기록'; document.querySelector('#record-form').requestSubmit(); location.hash = 'records'");
   await waitFor("document.querySelector('.record-card')");
   assert.equal(await evaluate("document.querySelector('.record-card p').textContent"),'<img src=x onerror=alert(1)> 계절 기록');
   assert.equal(await evaluate("document.querySelector('.record-card img')"),null,'record text must not become HTML');
+  await evaluate("document.querySelector('[data-edit-record]').click(); document.querySelector('#record-text').value = '오늘의 계절 기록 수정'; document.querySelector('#record-date').value='2030-01-15'; document.querySelector('#record-text').dispatchEvent(new Event('input',{bubbles:true})); document.querySelector('#record-form').requestSubmit()");
+  assert.equal(await evaluate("document.querySelector('.record-card p').textContent"),'오늘의 계절 기록 수정');
+  assert.equal(await evaluate("document.querySelector('.record-card time').dateTime"),'2030-01-15','record date can change');
+  assert.equal(await evaluate("document.querySelectorAll('.record-card').length"),1,'editing does not duplicate records');
+  await evaluate("document.querySelector('#record-search').value='찾을 수 없는 문구'; document.querySelector('#record-search').dispatchEvent(new Event('input',{bubbles:true}))");
+  assert.equal(await evaluate("document.querySelectorAll('.record-card').length"),0,'empty search result');
+  await evaluate("document.querySelector('[data-clear-search]').click()");
+  assert.equal(await evaluate("document.querySelectorAll('.record-card').length"),1,'clear search restores all records');
   await cdp('Page.reload');
   await waitFor("document.querySelector('.record-card')");
   assert.equal(await evaluate("document.querySelectorAll('.record-card').length"),1,'record persists on reload');
   await evaluate("location.hash = 'calendar'");
   await waitFor("document.querySelector('.calendar-grid')");
   assert.equal(await evaluate("document.querySelector('[data-toggle]').getAttribute('aria-pressed')"),'true','task completion persists');
+  for (let i=0; i<12; i++) {
+    if (await evaluate("document.querySelector('[data-date]').dataset.date.slice(5,7)==='01'")) break;
+    await evaluate("document.querySelector('[data-calendar-move=\"1\"]').click()");
+  }
+  await evaluate("document.querySelector('[data-date$=\"-31\"]').click(); document.querySelector('[data-calendar-move=\"1\"]').click()");
+  const februarySelection = await evaluate("document.querySelector('.day.selected').dataset.date");
+  const februaryYear = Number(februarySelection.slice(0,4));
+  assert.equal(februarySelection,`${februaryYear}-02-${new Date(februaryYear,2,0).getDate()}`,'month movement clamps the selected day to the last valid day');
+  await evaluate("document.querySelector('[data-calendar-today]').click()");
   await evaluate("document.querySelector('[data-calendar-move=\"1\"]').click(); document.querySelector('[data-date]').click(); document.querySelector('[data-add-task]').click(); document.querySelector('#task-title').value='다음 달 일정'; document.querySelector('#task-form').requestSubmit()");
   assert.equal(await evaluate("document.querySelector('.task-title').textContent"),'다음 달 일정');
+  await evaluate("document.querySelector('[data-edit-task]').click(); document.querySelector('#task-date').value='2031-02-03'; document.querySelector('#task-form').requestSubmit()");
+  assert.equal(await evaluate("document.querySelectorAll('.task-row').length"),0,'moving an event removes it from the old date');
+  assert.equal(await evaluate("JSON.parse(localStorage.getItem('imamttae:v1')).tasks.find(t=>t.title==='다음 달 일정').date"),'2031-02-03');
+  const current = await evaluate("JSON.parse(localStorage.getItem('imamttae:v1'))");
+  const backup = {version:1,month:4,tasks:[{...current.tasks[0],title:'덮어쓰면 안 되는 예전 일정',done:false},{id:'import-task',date:current.tasks[0].date,title:'백업에서 온 일정',done:false}],entries:[{id:'import-entry',date:current.entries[0].date,text:'백업에서 온 기록'}]};
+  const backupPath = path.join(output,'backup-fixture.json');
+  const invalidPath = path.join(output,'invalid-backup.json');
+  await writeFile(backupPath,JSON.stringify(backup));
+  await writeFile(invalidPath,'{"version":99}');
+  async function selectBackup(file) {
+    await evaluate("document.querySelector('#settings-button').click()");
+    const {root} = await cdp('DOM.getDocument');
+    const {nodeId} = await cdp('DOM.querySelector',{nodeId:root.nodeId,selector:'#backup-file'});
+    await cdp('DOM.setFileInputFiles',{nodeId,files:[file]});
+  }
+  const beforeImport = await evaluate("localStorage.getItem('imamttae:v1')");
+  await selectBackup(invalidPath);
+  await waitFor("document.querySelector('#import-error')?.textContent.length > 0");
+  assert.equal(await evaluate("localStorage.getItem('imamttae:v1')"),beforeImport,'invalid backup cannot mutate data');
+  await evaluate("document.querySelector('[data-close]').click()");
+  await selectBackup(backupPath);
+  await waitFor("document.querySelector('[data-confirm-import]')");
+  assert.equal(await evaluate("localStorage.getItem('imamttae:v1')"),beforeImport,'preview cannot mutate data');
+  await evaluate("document.querySelector('[data-close]').click()");
+  assert.equal(await evaluate("localStorage.getItem('imamttae:v1')"),beforeImport,'cancel cannot mutate data');
+  await selectBackup(backupPath);
+  await waitFor("document.querySelector('[data-confirm-import]')");
+  // Fail localStorage intentionally: import must leave both disk and in-memory data intact.
+  await evaluate("window.originalSetItem=Storage.prototype.setItem; Storage.prototype.setItem=function(){throw new DOMException('full','QuotaExceededError')}; document.querySelector('[data-confirm-import]').click()");
+  assert.ok(await evaluate("document.querySelector('#restore-error').textContent.length > 0"));
+  assert.equal(await evaluate("localStorage.getItem('imamttae:v1')"),beforeImport,'failed save leaves persisted data intact');
+  await evaluate("Storage.prototype.setItem=window.originalSetItem; document.querySelector('[data-confirm-import]').click()");
+  const imported = await evaluate("JSON.parse(localStorage.getItem('imamttae:v1'))");
+  assert.equal(imported.tasks.length,current.tasks.length+1);
+  assert.equal(imported.entries.length,current.entries.length+1);
+  assert.equal(imported.tasks[0].title,'수정한 할 일');
+  assert.equal(imported.tasks[0].done,true);
+  assert.equal(imported.month,current.month,'import preserves theme');
+  await selectBackup(backupPath);
+  await waitFor("document.querySelector('[data-confirm-import]')");
+  assert.equal(await evaluate("document.querySelector('[data-confirm-import]').disabled"),true,'same backup cannot create duplicates');
+  await evaluate("document.querySelector('[data-close]').click(); location.hash='records'");
+  await waitFor("document.querySelector('#record-search')");
+  await evaluate("document.querySelector('#record-search').value='백업에서'; document.querySelector('#record-search').dispatchEvent(new Event('input',{bubbles:true}))");
+  assert.equal(await evaluate("document.querySelectorAll('.record-card').length"),1,'search imported record');
+  assert.equal(await evaluate("document.querySelector('.record-card p').textContent"),'백업에서 온 기록');
+  await evaluate("document.querySelector('#toast').style.transition='none'; document.querySelector('#toast').classList.remove('visible')");
+  const searchScreenshot = await cdp('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
+  await writeFile(path.join(output,'record-search.png'),Buffer.from(searchScreenshot.data,'base64'));
   await evaluate("location.hash = 'today'");
   await waitFor("document.querySelector('.mascot')");
   for (const [month,season] of [[4,'봄'],[7,'여름'],[10,'가을'],[1,'겨울']]) {
@@ -97,7 +169,7 @@ try {
     assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'),true,`320px overflow on ${destination}`);
   }
   assert.deepEqual(errors,[],'uncaught browser exceptions');
-  console.log('PASS: mobile layout, tasks, completion, records, XSS escaping, persistence, calendar, four seasonal themes. Screenshots: test-results/');
+  console.log('PASS: mobile layout, task/record editing, completion, search, XSS escaping, persistence, calendar, backup preview/cancel/merge/deduplication/storage failure, four seasonal themes. Screenshots: test-results/');
 } finally {
   socket?.close();
   browser.kill();

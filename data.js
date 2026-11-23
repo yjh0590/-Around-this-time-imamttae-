@@ -10,15 +10,69 @@ export function seasonForMonth(month) {
   return month >= 3 && month <= 5 ? 'spring' : month >= 6 && month <= 8 ? 'summer' : month >= 9 && month <= 11 ? 'autumn' : 'winter';
 }
 export function dateKey(date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  return `${String(date.getFullYear()).padStart(4, '0')}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+export function localDate(year, month, day = 1) {
+  const date = new Date(0);
+  date.setHours(12, 0, 0, 0);
+  date.setFullYear(year, month, day);
+  return date;
 }
 export function calendarCells(year, month) {
-  const offset = new Date(year, month, 1).getDay();
-  const count = new Date(year, month + 1, 0).getDate();
+  const first = localDate(year, month);
+  const last = localDate(year, month + 1, 0);
+  const offset = first.getDay();
+  const count = last.getDate();
   return Array.from({ length: Math.ceil((offset + count) / 7) * 7 }, (_, i) => i >= offset && i < offset + count ? i - offset + 1 : null);
 }
 export function sanitizeState(raw) {
-  const tasks = Array.isArray(raw?.tasks) ? raw.tasks.filter(t => t && typeof t.id === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(t.date) && typeof t.title === 'string').map(t => ({ id: t.id, date: t.date, title: t.title.slice(0, 100), done: t.done === true })) : [];
-  const entries = Array.isArray(raw?.entries) ? raw.entries.filter(e => e && typeof e.id === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(e.date) && typeof e.text === 'string').map(e => ({ id: e.id, date: e.date, text: e.text.slice(0, 1000) })) : [];
+  const tasks = Array.isArray(raw?.tasks) ? raw.tasks.filter(t => t && typeof t.id === 'string' && isDateKey(t.date) && typeof t.title === 'string').map(t => ({ id: t.id, date: t.date, title: t.title.slice(0, 100), done: t.done === true })) : [];
+  const entries = Array.isArray(raw?.entries) ? raw.entries.filter(e => e && typeof e.id === 'string' && isDateKey(e.date) && typeof e.text === 'string').map(e => ({ id: e.id, date: e.date, text: e.text.slice(0, 1000) })) : [];
   return { tasks, entries, month: Number.isInteger(raw?.month) && raw.month >= 1 && raw.month <= 12 ? raw.month : null };
+}
+
+export function isDateKey(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value) || value.startsWith('0000')) return false;
+  const date = new Date(`${value}T12:00:00`);
+  return !Number.isNaN(date.getTime()) && dateKey(date) === value;
+}
+
+// Import is stricter than local-state recovery: never silently drop backup data.
+export function parseBackup(text) {
+  let raw;
+  try { raw = JSON.parse(text); } catch { throw new Error('JSON 파일을 읽지 못했어요. 이맘때에서 내려받은 백업을 선택해 주세요.'); }
+  if (!raw || raw.version !== 1 || !Array.isArray(raw.tasks) || !Array.isArray(raw.entries)) {
+    throw new Error('지원하는 이맘때 백업 형식이 아니에요.');
+  }
+  for (const [key, field, limit] of [['tasks', 'title', 100], ['entries', 'text', 1000]]) {
+    const ids = new Set();
+    for (const item of raw[key]) {
+      if (!item || typeof item.id !== 'string' || !item.id.trim() || ids.has(item.id) ||
+          !isDateKey(item.date) || typeof item[field] !== 'string' || !item[field].trim() ||
+          item[field].length > limit || (key === 'tasks' && typeof item.done !== 'boolean')) {
+        throw new Error('백업에 잘못된 날짜나 항목이 있어요. 현재 데이터는 변경하지 않았어요.');
+      }
+      ids.add(item.id);
+    }
+  }
+  return sanitizeState(raw);
+}
+
+export function mergeBackup(current, incoming) {
+  const tasks = new Set(current.tasks.map(task => task.id));
+  const entries = new Set(current.entries.map(entry => entry.id));
+  const newTasks = incoming.tasks.filter(task => !tasks.has(task.id));
+  const newEntries = incoming.entries.filter(entry => !entries.has(entry.id));
+  return {
+    state: { ...current, tasks: [...current.tasks, ...newTasks], entries: [...current.entries, ...newEntries] },
+    addedTasks: newTasks.length,
+    addedEntries: newEntries.length,
+    skipped: incoming.tasks.length + incoming.entries.length - newTasks.length - newEntries.length
+  };
+}
+
+export function searchEntries(entries, query) {
+  const needle = query.trim().normalize('NFC').toLocaleLowerCase('ko-KR');
+  return [...entries].filter(entry => !needle || `${entry.date} ${entry.text}`.normalize('NFC').toLocaleLowerCase('ko-KR').includes(needle))
+    .sort((a, b) => b.date.localeCompare(a.date));
 }
