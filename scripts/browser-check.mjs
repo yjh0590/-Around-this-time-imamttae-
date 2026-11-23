@@ -10,7 +10,12 @@ const browserPath = process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/A
 const output = path.resolve('test-results');
 await mkdir(output, { recursive:true });
 const profile = await mkdtemp(path.join(output, 'browser-profile-'));
-const server = createServer();
+let naverSyncCalls=0;
+let naverConfiguredForTest=true;
+const server = createServer({naverClient:{get configured(){return naverConfiguredForTest;},list:async()=>[{id:'a'.repeat(24),name:'가상 검증용 네이버 캘린더'}],sync:async(date,ids)=>{
+  assert.deepEqual(ids,['a'.repeat(24)]);naverSyncCalls++;
+  return {items:[{id:'naver:browser-fixture',type:'calendar',date:lastYearRange(new Date(`${date}T12:00:00`)).anchor,title:'네이버 시험 일정',text:'가상 응답으로 검증하는 일정',source:'네이버 캘린더 · 가상 검증용'}],skipped:0,range:lastYearRange(new Date(`${date}T12:00:00`),14)};
+}}});
 await new Promise(resolve => server.listen(0,'127.0.0.1',resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
 const browser = spawn(browserPath, ['--headless=new','--disable-gpu','--no-first-run','--no-default-browser-check','--remote-debugging-port=0',`--user-data-dir=${profile}`, 'about:blank'], { windowsHide:true, stdio:['ignore','ignore','pipe'] });
@@ -221,6 +226,40 @@ try {
   await writeFile(path.join(output,'lastyear-timeline.png'),Buffer.from(recapShot.data,'base64'));
   await evaluate("document.querySelector('[data-clear-range]').click(); location.hash='today'");
   await waitFor("document.querySelector('.mascot')");
+  await evaluate("location.hash='records'");
+  await waitFor("document.querySelector('[data-connections]')");
+  await evaluate("document.querySelector('[data-connections]').click()");
+  await waitFor("document.querySelector('[data-naver-list]') && !document.querySelector('[data-naver-list]').disabled");
+  await evaluate("document.querySelector('[data-naver-list]').click()");
+  await waitFor("document.querySelector('[data-naver-calendar]')");
+  await evaluate("document.querySelector('[data-naver-calendar]').click(); document.querySelector('#naver-auto').click(); document.querySelector('[data-naver-sync]').click()");
+  await waitFor("document.querySelector('#naver-status').textContent.includes('새 일정 1개')");
+  assert.equal(await evaluate("JSON.parse(localStorage.getItem('imamttae:v1')).naver.automatic"),true);
+  assert.equal(naverSyncCalls,1);
+  await evaluate("document.querySelector('[data-naver-sync]').click()");
+  await waitFor("document.querySelector('#naver-status').textContent.includes('새 일정 0개')");
+  assert.equal(await evaluate("JSON.parse(localStorage.getItem('imamttae:v1')).memories.filter(item=>item.id==='naver:browser-fixture').length"),1,'naver sync deduplicates');
+  await evaluate("document.querySelector('#modal').scrollTop=document.querySelector('#naver-status').offsetTop-40");
+  const naverShot=await cdp('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
+  await writeFile(path.join(output,'naver-connection.png'),Buffer.from(naverShot.data,'base64'));
+  await evaluate("document.querySelector('[data-close]').click()");
+  await cdp('Page.reload');
+  await waitFor("document.querySelector('#record-results')");
+  assert.equal(naverSyncCalls,2,'same day reload must not fetch automatically again');
+  await evaluate("(()=>{const data=JSON.parse(localStorage.getItem('imamttae:v1'));data.naver.lastSyncDate=null;localStorage.setItem('imamttae:v1',JSON.stringify(data));})()");
+  await cdp('Page.reload');
+  await waitFor("JSON.parse(localStorage.getItem('imamttae:v1')).naver.lastSyncDate!==null");
+  assert.equal(naverSyncCalls,3,'opted-in startup import');
+  assert.equal(await evaluate("JSON.parse(localStorage.getItem('imamttae:v1')).memories.filter(item=>item.id==='naver:browser-fixture').length"),1);
+  naverConfiguredForTest=false;
+  await evaluate("document.querySelector('[data-connections]').click()");
+  await waitFor("document.querySelector('#naver-status').textContent.includes('설정이 필요')");
+  assert.equal(await evaluate("document.querySelector('[data-naver-list]').disabled"),true,'unconfigured server cannot claim a live connection');
+  assert.equal(await evaluate("document.querySelector('[data-naver-sync]').disabled"),true);
+  assert.equal(await evaluate("document.querySelector('.naver-connection input[type=password]')"),null,'credentials must not be collected in browser UI');
+  await evaluate("document.querySelector('[data-close]').click()");
+  await evaluate("location.hash='today'");
+  await waitFor("document.querySelector('.mascot')");
   for (const [month,season] of [[4,'봄'],[7,'여름'],[10,'가을'],[1,'겨울']]) {
     await evaluate(`document.querySelector('#settings-button').click(); document.querySelector('#month-select').value='${month}'; document.querySelector('#month-select').dispatchEvent(new Event('change',{bubbles:true})); document.querySelector('[data-close]').click()`);
     assert.ok((await evaluate("document.querySelector('h1').textContent")).includes(season));
@@ -239,7 +278,7 @@ try {
     assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'),true,`320px overflow on ${destination}`);
   }
   assert.deepEqual(errors,[],'uncaught browser exceptions');
-  console.log('PASS: editing/search/persistence, calendar, v1/v2 backups, ICS/CSV/photo imports, explicit photo dates, category filters, source links, last-year recap, storage failure, four seasons, 320px layout. Screenshots: test-results/');
+  console.log('PASS: editing/search/backups/imports, last-year recap, mock Naver calendar selection/manual import/daily startup import/deduplication, storage failure, four seasons, 320px layout. Live Naver account was not used. Screenshots: test-results/');
 } finally {
   socket?.close();
   browser.kill();

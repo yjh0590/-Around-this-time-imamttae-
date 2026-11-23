@@ -1,8 +1,18 @@
 {
   "name": "imamttae",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
-  "scripts": { "start": "node server.mjs", "test": "node --test", "test:browser": "node scripts/browser-check.mjs", "check": "node --check app.js && node --check data.js && node --check imports.js && node --check journal.js && node --check server.mjs" },
-  "engines": { "node": ">=20" }
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test",
+    "test:browser": "node scripts/browser-check.mjs",
+    "check": "node --check app.js && node --check data.js && node --check imports.js && node --check journal.js && node --check naver.js && node --check naver-caldav.mjs && node --check server.mjs"
+  },
+  "engines": {
+    "node": ">=20.12"
+  },
+  "dependencies": {
+    "fast-xml-parser": "5.12.1"
+  }
 }

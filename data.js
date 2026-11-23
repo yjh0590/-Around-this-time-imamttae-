@@ -30,7 +30,9 @@ export function sanitizeState(raw) {
   const entries = Array.isArray(raw?.entries) ? raw.entries.filter(e => e && typeof e.id === 'string' && isDateKey(e.date) && typeof e.text === 'string').map(e => ({ id: e.id, date: e.date, text: e.text.slice(0, 1000) })) : [];
   const memories = Array.isArray(raw?.memories) ? raw.memories.filter(validMemory).map(cleanMemory) : [];
   const categories = Array.isArray(raw?.categories) ? [...new Set(raw.categories.filter(key => typeof key === 'string' && Object.hasOwn(CATEGORIES,key)))] : Object.keys(CATEGORIES);
-  return { tasks, entries, memories, categories, month: Number.isInteger(raw?.month) && raw.month >= 1 && raw.month <= 12 ? raw.month : null };
+  const calendarIds=Array.isArray(raw?.naver?.calendarIds) ? [...new Set(raw.naver.calendarIds.filter(id=>typeof id==='string' && /^[a-f0-9]{24}$/.test(id)))].slice(0,10) : [];
+  const naver={calendarIds,automatic:calendarIds.length>0 && raw?.naver?.automatic===true,lastSyncDate:isDateKey(raw?.naver?.lastSyncDate) ? raw.naver.lastSyncDate : null};
+  return { tasks, entries, memories, categories, naver, month: Number.isInteger(raw?.month) && raw.month >= 1 && raw.month <= 12 ? raw.month : null };
 }
 
 export function isDateKey(value) {

@@ -399,6 +399,11 @@ h2 {
 .category-settings input {width:16px;height:16px;accent-color:var(--accent);}
 .connection-section {margin-top:22px;padding-top:18px;border-top:1px solid #e8ece1;}
 .connection-section h3 {font-size:14px;margin:0;}
+.naver-buttons {display:flex;flex-wrap:wrap;gap:8px;margin:14px 0;}
+.auto-sync-label,.naver-calendar-option {display:flex;align-items:center;gap:10px;font-size:12px;line-height:1.8;}
+.auto-sync-label input,.naver-calendar-option input {width:17px;height:17px;flex-shrink:0;accent-color:var(--accent);}
+.naver-calendar-option {background:var(--tint);padding:10px;border-radius:10px;}
+.naver-calendar-option span {overflow-wrap:anywhere;}
 .source-preview {max-height:48dvh;overflow-y:auto;}
 .preview-item {padding:15px 0;border-bottom:1px solid #e8ece1;}
 .preview-item strong {display:block;font-size:13px;line-height:1.7;overflow-wrap:anywhere;}

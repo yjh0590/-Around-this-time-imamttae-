@@ -1,6 +1,7 @@
 import { SEASONS, MONTH_NOTES, seasonForMonth, dateKey, localDate, calendarCells, sanitizeState, isDateKey, parseBackup, mergeBackup, CATEGORIES, timelineItems, lastYearRange, safeLink } from './data.js';
 import { parseCalendar, parseExpenses, preparePhoto } from './imports.js';
 import { journalShell, journalResults, memoryCard, connectionsContent, sourcePreview } from './journal.js';
+import {naverStatus,naverCalendars,syncNaver,naverPanel,calendarChoices} from './naver.js';
 
 const paths = {
   settings: '<path d="m10 3 1-1h2l1 1 1 2 2 1 2-1 2 3-1 2v3l1 2-2 3-2-1-2 1-1 2h-4l-1-2-2-1-2 1-2-3 1-2v-3l-1-2 2-3 2 1 2-1z"/><circle cx="12" cy="11" r="3"/>',
@@ -28,6 +29,9 @@ let pendingImport = null;
 let pendingSource = null;
 let journalFilter = 'all';
 let journalRange = null;
+let naverRunning=false;
+let naverConfigured=false;
+let lastAutoAttempt='';
 const main = document.querySelector('#main');
 const modal = document.querySelector('#modal');
 const todayKey = () => dateKey(new Date());
@@ -207,6 +211,62 @@ document.addEventListener('submit',event=>{
   if(!save(next)) {error.textContent='저장하지 못했어요. 기존 기록은 유지했어요. 백업 후 저장 공간을 확인해 주세요.';return;}
   state=next;pendingSource=null;modal.close();render();toast('나의 기록에 담았어요.');
 });
+async function openConnections() {
+  openModal('기록 연결',connectionsContent(state)+naverPanel(state));
+  const status=document.querySelector('#naver-status');
+  try {
+    const result=await naverStatus();
+    if(!status.isConnected || !modal.open) return;
+    naverConfigured=result.configured===true;
+    status.textContent=naverConfigured ? '서버 설정이 있어요. 캘린더 목록을 확인하고 가져올 대상을 골라주세요.' : '로컬 서버에 네이버 연결 설정이 필요해요. 설정 전에는 ICS 파일로 가져올 수 있어요.';
+    document.querySelector('[data-naver-list]').disabled=!naverConfigured || naverRunning;
+    document.querySelector('[data-naver-sync]').disabled=!naverConfigured || !state.naver.calendarIds.length || naverRunning;
+    document.querySelector('#naver-auto').disabled=!naverConfigured || !state.naver.calendarIds.length;
+  } catch(problem) {if(status.isConnected) status.textContent=problem.message;}
+}
+async function loadNaverCalendars(button) {
+  const target=document.querySelector('#naver-calendars');
+  const error=document.querySelector('#naver-error');
+  button.disabled=true;error.textContent='';
+  try {
+    const result=await naverCalendars();
+    if(!target.isConnected || !modal.open) return;
+    target.innerHTML=calendarChoices(result.calendars,state.naver.calendarIds);
+  } catch(problem) {if(error.isConnected) error.textContent=problem.message;}
+  finally {button.disabled=false;}
+}
+async function runNaverSync(automatic=false) {
+  if(naverRunning || !state.naver.calendarIds.length) return;
+  naverRunning=true;
+  const syncDate=todayKey();
+  const error=document.querySelector('#naver-error');
+  if(error) error.textContent='';
+  for(const button of document.querySelectorAll('[data-naver-sync],[data-naver-list],[data-naver-calendar]')) button.disabled=true;
+  try {
+    const result=await syncNaver(syncDate,state.naver.calendarIds);
+    if(!Array.isArray(result.items) || !Number.isInteger(result.skipped) || result.skipped<0) throw new Error('네이버 조회 결과를 확인하지 못했어요.');
+    const verified=sanitizeState({...state,memories:result.items}).memories;
+    if(verified.length!==result.items.length) throw new Error('네이버 일정의 날짜와 내용을 확인하지 못해 이번 조회를 적용하지 않았어요.');
+    const merged=mergeBackup(state,{tasks:[],entries:[],memories:verified});
+    const next={...merged.state,naver:{...state.naver,lastSyncDate:syncDate}};
+    if(!save(next)) throw new Error('가져온 일정을 저장하지 못했어요. 기존 기록은 유지했어요.');
+    state=next;render();
+    const status=document.querySelector('#naver-status');
+    const message=`네이버에서 새 일정 ${merged.addedMemories}개를 가져왔어요.${result.skipped ? ` 반복·취소 ${result.skipped}개는 제외했어요.` : ''}`;
+    if(status) status.textContent=message;
+    const lastCheck=document.querySelector('#naver-last-check');if(lastCheck) lastCheck.textContent=`마지막 확인: ${syncDate}`;
+    if(!automatic || merged.addedMemories || result.skipped) toast(message);
+  } catch(problem) {if(error?.isConnected) error.textContent=problem.message;else toast(problem.message);}
+  finally {
+    naverRunning=false;
+    for(const input of document.querySelectorAll('[data-naver-calendar]')) input.disabled=false;
+    const sync=document.querySelector('[data-naver-sync]'); if(sync) sync.disabled=!naverConfigured || !state.naver.calendarIds.length;
+    const list=document.querySelector('[data-naver-list]'); if(list) list.disabled=!naverConfigured;
+  }
+}
+function maybeAutoNaver() {
+  if(state.naver.automatic && state.naver.calendarIds.length && state.naver.lastSyncDate!==todayKey() && lastAutoAttempt!==todayKey()) {lastAutoAttempt=todayKey();runNaverSync(true);}
+}
 function readPage() {
   page = ['calendar','records'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'today';
   render();
@@ -215,13 +275,15 @@ document.querySelector('#settings-button').innerHTML = icon('settings');
 document.querySelector('#settings-button').addEventListener('click', openSettings);
 modal.addEventListener('close', () => { if (!modal.open) { pendingImport = null; pendingSource = null; } });
 window.addEventListener('hashchange', () => { readPage(); main.focus(); window.scrollTo(0, 0); });
-document.addEventListener('visibilitychange', () => { if (!document.hidden && !modal.open) render(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && !modal.open) {render();maybeAutoNaver();} });
 document.addEventListener('click', event => {
   const button = event.target.closest('button');
   if (!button) return;
   const d = button.dataset;
   if ('close' in d) modal.close();
-  else if ('connections' in d) openModal('기록 연결', connectionsContent(state));
+  else if ('connections' in d) openConnections();
+  else if ('naverList' in d) loadNaverCalendars(button);
+  else if ('naverSync' in d) runNaverSync();
   else if ('journalFilter' in d) { journalFilter=d.journalFilter; renderRecords(); }
   else if ('showLastyear' in d) { journalRange=lastYearRange(new Date()); recordQuery=''; journalFilter='all'; if(location.hash === '#records') renderRecords(); else location.hash='records'; }
   else if ('clearRange' in d) { journalRange=null; renderRecords(); }
@@ -276,6 +338,17 @@ document.addEventListener('change', event => {
   if (event.target.id === 'month-select') { state.month = Number(event.target.value) || null; save(); render(); }
   else if (event.target.id === 'backup-file') previewBackup(event.target.files[0]);
   else if (['calendar-file','expense-file','photo-files'].includes(event.target.id)) previewSource(event.target);
+  else if (event.target.matches('[data-naver-calendar]')) {
+    const ids=[...document.querySelectorAll('[data-naver-calendar]:checked')].map(input=>input.dataset.naverCalendar);
+    if(ids.length>10) {event.target.checked=false;document.querySelector('#naver-error').textContent='한 번에 최대 10개까지 선택할 수 있어요.';return;}
+    const next={...state,naver:{...state.naver,calendarIds:ids,automatic:ids.length>0 && state.naver.automatic,lastSyncDate:null}};
+    if(save(next)) {state=next;document.querySelector('[data-naver-sync]').disabled=!ids.length;document.querySelector('#naver-auto').disabled=!ids.length;document.querySelector('#naver-auto').checked=next.naver.automatic;}
+    else event.target.checked=!event.target.checked;
+  }
+  else if(event.target.id==='naver-auto') {
+    const next={...state,naver:{...state.naver,automatic:event.target.checked && state.naver.calendarIds.length>0}};
+    if(save(next)) state=next;else event.target.checked=!event.target.checked;
+  }
   else if (event.target.matches('[data-category]')) {
     const category=event.target.dataset.category;
     const next={...state,categories:event.target.checked ? [...new Set([...state.categories,category])] : state.categories.filter(key=>key!==category)};
@@ -313,4 +386,5 @@ document.addEventListener('submit', event => {
   const persisted = save(); modal.close(); render(); if (persisted) toast('나의 이맘때에 담았어요.');
 });
 readPage();
+maybeAutoNaver();
 if (loadError) toast('저장된 데이터를 읽지 못했어요. 저장 공간 설정을 확인해 주세요.');
