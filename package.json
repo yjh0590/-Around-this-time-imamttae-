@@ -1,13 +1,15 @@
 {
   "name": "imamttae",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
     "test": "node --test",
     "test:browser": "node scripts/browser-check.mjs",
-    "check": "node --check app.js && node --check data.js && node --check imports.js && node --check journal.js && node --check naver.js && node --check naver-caldav.mjs && node --check server.mjs"
+    "setup:naver": "node scripts/setup-naver.mjs",
+    "check:naver": "node scripts/check-naver.mjs",
+    "check": "node --check app.js && node --check data.js && node --check imports.js && node --check journal.js && node --check naver.js && node --check naver-caldav.mjs && node --check server.mjs && node --check scripts/naver-config.mjs && node --check scripts/setup-naver.mjs && node --check scripts/check-naver.mjs"
   },
   "engines": {
     "node": ">=20.12"
