@@ -2,6 +2,15 @@ import { SEASONS, MONTH_NOTES, seasonForMonth, dateKey, localDate, calendarCells
 import { parseCalendar, parseExpenses, preparePhoto } from './imports.js';
 import { journalShell, journalResults, memoryCard, connectionsContent, sourcePreview } from './journal.js';
 import {naverStatus,naverCalendars,syncNaver,naverPanel,calendarChoices} from './naver.js';
+import {DEVICES,previewOptions} from './devices.js';
+
+const devicePreview=previewOptions(location.search);
+if(devicePreview) {
+  const model=DEVICES[devicePreview.device];
+  document.documentElement.dataset.devicePreview=devicePreview.device;
+  document.documentElement.style.setProperty('--device-safe-top',`${model.top}px`);
+  document.documentElement.style.setProperty('--device-safe-bottom',`${model.bottom}px`);
+}
 
 const paths = {
   settings: '<path d="m10 3 1-1h2l1 1 1 2 2 1 2-1 2 3-1 2v3l1 2-2 3-2-1-2 1-1 2h-4l-1-2-2-1-2 1-2-3 1-2v-3l-1-2 2-3 2 1 2-1z"/><circle cx="12" cy="11" r="3"/>',
@@ -35,7 +44,7 @@ let lastAutoAttempt='';
 const main = document.querySelector('#main');
 const modal = document.querySelector('#modal');
 const todayKey = () => dateKey(new Date());
-const theme = () => SEASONS[seasonForMonth(state.month || new Date().getMonth() + 1)];
+const theme = () => SEASONS[seasonForMonth(devicePreview?.month || state.month || new Date().getMonth() + 1)];
 const fullDate = date => date.toLocaleDateString('ko-KR', { month:'long', day:'numeric', weekday:'long' });
 
 function toast(message) {
@@ -78,9 +87,9 @@ function render() {
 }
 function renderToday() {
   const season = theme();
-  const month = state.month || new Date().getMonth() + 1;
+  const month = devicePreview?.month || state.month || new Date().getMonth() + 1;
   const memories = [];
-  main.innerHTML = `${state.month ? `<div class="preview-banner"><span>${month}월 테마 미리보기 · 날짜와 일정은 오늘 기준</span><button data-auto>현재 계절로</button></div>` : ''}<p class="eyebrow">${fullDate(new Date())}</p><h1>${season.title}</h1><div class="accent-line"></div><section class="hero" aria-label="${season.name} 캐릭터"><span class="month-chip">${MONTH_NOTES[month - 1]}</span><div class="mascot" role="img" aria-label="${season.name} 옷을 입은 둥근 돌 캐릭터"></div><p class="hero-note">${season.greeting}</p></section><section class="card"><div class="card-head"><h2>오늘 챙길 일</h2><button class="small-button" data-add-task="${todayKey()}" aria-label="오늘 할 일 추가">${icon('plus')} 추가</button></div>${taskRows(todayKey())}${!tasksFor(todayKey()).length ? `<button class="small-button" data-suggest-task>${season.task} 담기 ${icon('right')}</button>` : ''}</section><section class="card"><div class="card-head"><h2>이맘때 이야기</h2></div><button class="story-button" data-story><span class="story-symbol">${icon('leaf')}</span><span class="story-copy"><span>${season.category}</span><strong>${season.story}</strong></span>${icon('right')}</button></section>${memories.length ? `<section class="card"><h2>작년 이맘때</h2>${memories.map(entry => `<div class="memory"><span>${escapeHTML(entry.date)}</span><p>${escapeHTML(entry.text)}</p></div>`).join('')}</section>` : `<button class="memory" data-add-record="${todayKey()}"><span>오늘을 기억하는 작은 방법</span><p>지금의 계절을 한 줄로 남겨볼까요? ↗</p></button>`}<p class="quiet-note">계절은 천천히, 나의 하루는 나답게.<br>대한민국의 월별 계절 테마 · 실시간 날씨 미연동</p>`;
+  main.innerHTML = `${(state.month && !devicePreview?.month) ? `<div class="preview-banner"><span>${month}월 테마 미리보기 · 날짜와 일정은 오늘 기준</span><button data-auto>현재 계절로</button></div>` : ''}<p class="eyebrow">${fullDate(new Date())}</p><h1>${season.title}</h1><div class="accent-line"></div><section class="hero" aria-label="${season.name} 캐릭터"><span class="month-chip">${MONTH_NOTES[month - 1]}</span><div class="mascot" role="img" aria-label="${season.name} 옷을 입은 둥근 돌 캐릭터"></div><p class="hero-note">${season.greeting}</p></section><section class="card"><div class="card-head"><h2>오늘 챙길 일</h2><button class="small-button" data-add-task="${todayKey()}" aria-label="오늘 할 일 추가">${icon('plus')} 추가</button></div>${taskRows(todayKey())}${!tasksFor(todayKey()).length ? `<button class="small-button" data-suggest-task>${season.task} 담기 ${icon('right')}</button>` : ''}</section><section class="card"><div class="card-head"><h2>이맘때 이야기</h2></div><button class="story-button" data-story><span class="story-symbol">${icon('leaf')}</span><span class="story-copy"><span>${season.category}</span><strong>${season.story}</strong></span>${icon('right')}</button></section>${memories.length ? `<section class="card"><h2>작년 이맘때</h2>${memories.map(entry => `<div class="memory"><span>${escapeHTML(entry.date)}</span><p>${escapeHTML(entry.text)}</p></div>`).join('')}</section>` : `<button class="memory" data-add-record="${todayKey()}"><span>오늘을 기억하는 작은 방법</span><p>지금의 계절을 한 줄로 남겨볼까요? ↗</p></button>`}<p class="quiet-note">계절은 천천히, 나의 하루는 나답게.<br>대한민국의 월별 계절 테마 · 실시간 날씨 미연동</p>`;
 }
 function renderCalendar() {
   const year = calendarDate.getFullYear();

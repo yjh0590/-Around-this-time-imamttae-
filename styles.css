@@ -603,3 +603,13 @@ h1 {
   padding-left:20px;
   padding-right:20px}
 }
+/* The preview provides representative OS safe areas; the normal app is unchanged. */
+html[data-device-preview] {background:var(--page);scrollbar-width:none}
+html[data-device-preview]::-webkit-scrollbar {display:none}
+html[data-device-preview] body {padding:0;background:var(--page)}
+html[data-device-preview] .app-shell {max-width:none;min-height:100dvh;border:0;border-radius:0;box-shadow:none}
+html[data-device-preview] .app-header {padding-top:calc(12px + var(--device-safe-top))}
+html[data-device-preview] main {padding-bottom:calc(112px + var(--device-safe-bottom))}
+html[data-device-preview] .bottom-nav {bottom:0;border-radius:0;width:100%;padding-bottom:calc(12px + var(--device-safe-bottom))}
+html[data-device-preview] dialog {max-height:calc(100dvh - var(--device-safe-top) - var(--device-safe-bottom) - 32px)}
+html[data-device-preview] .toast {bottom:calc(100px + var(--device-safe-bottom))}

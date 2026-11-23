@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>이맘때 · 기기 미리보기</title>
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="preview.css">
+</head>
+<body>
+  <header class="preview-header"><a href="/" class="preview-brand">이맘때<span></span></a><span class="preview-heading">기기 미리보기</span><a class="open-app" href="/" target="_blank" rel="noopener">앱만 열기 ↗</a></header>
+  <div class="preview-toolbar" aria-label="미리보기 설정">
+    <label for="device">기종<select id="device"><option value="iphone16">iPhone 16</option><option value="iphone16pro">iPhone 16 Pro</option><option value="galaxys24">Galaxy S24</option></select></label>
+    <label for="season">계절<select id="season"><option value="">지금 계절</option><option value="4">봄</option><option value="7">여름</option><option value="10">가을</option><option value="1">겨울</option></select></label>
+    <label for="zoom">보기<select id="zoom"><option value="fit">화면에 맞추기</option><option value="actual">100%</option></select></label>
+    <span id="device-info" role="status"></span>
+  </div>
+  <main class="preview-stage" id="stage">
+    <div class="phone-slot" id="phone-slot"><div class="phone" id="phone" data-family="iphone">
+      <span class="side-button silent" aria-hidden="true"></span><span class="side-button volume" aria-hidden="true"></span><span class="side-button power" aria-hidden="true"></span>
+      <div class="phone-screen">
+        <iframe id="app-preview" title="iPhone 16에서 이맘때 미리보기"></iframe>
+        <div class="status-bar" aria-hidden="true"><span class="status-time">9:41</span><span class="camera-cutout"></span><div class="status-icons"><svg viewBox="0 0 20 16"><path d="M1 14h2v-3H1zm5 0h2V8H6zm5 0h2V5h-2zm5 0h2V2h-2z"/></svg><svg viewBox="0 0 20 16"><path d="M1 4a14 14 0 0 1 18 0l-2 2a11 11 0 0 0-14 0zm4 4a8 8 0 0 1 10 0l-2 2a5 5 0 0 0-6 0zm3 4a3 3 0 0 1 4 0l-2 2z"/></svg><span class="battery"></span></div></div>
+        <span class="home-indicator" aria-hidden="true"></span>
+      </div>
+    </div></div>
+  </main>
+  <footer>기종별 화면 비율과 프레임을 재현한 웹 미리보기예요. 실제 기기·운영체제 검증과는 달라요.<br>앱을 직접 조작할 수 있어요. 계절 선택은 미리보기에만 적용돼요.</footer>
+  <script type="module" src="preview.js"></script>
+</body>
+</html>

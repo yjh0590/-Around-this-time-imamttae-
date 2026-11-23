@@ -277,8 +277,31 @@ try {
     await waitFor(`document.querySelector('.nav-item[aria-current="page"]').getAttribute('href') === '#${destination}'`);
     assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'),true,`320px overflow on ${destination}`);
   }
+  await evaluate("localStorage.removeItem('imamttae:v1')");
+  await cdp('Emulation.setDeviceMetricsOverride',{width:1440,height:1100,deviceScaleFactor:1,mobile:false});
+  await cdp('Page.navigate',{url:`${origin}/preview?device=iphone16&month=4`});
+  await waitFor("document.querySelector('#app-preview')?.contentDocument?.querySelector('.mascot')");
+  for(const [id,width,height] of [['iphone16',393,852],['iphone16pro',402,874],['galaxys24',360,780]]) {
+    await evaluate(`document.querySelector('#device').value='${id}';document.querySelector('#device').dispatchEvent(new Event('change'))`);
+    await waitFor(`document.querySelector('#app-preview').contentDocument?.documentElement?.dataset.devicePreview==='${id}' && document.querySelector('#app-preview').contentDocument.querySelector('h1')?.textContent.includes('봄')`);
+    assert.equal(await evaluate("document.querySelector('#app-preview').contentWindow.innerWidth"),width,`${id} viewport width`);
+    assert.equal(await evaluate("document.querySelector('#app-preview').contentWindow.innerHeight"),height,`${id} viewport height`);
+    await evaluate("(()=>{const frame=document.querySelector('#app-preview');return frame.contentDocument.fonts.ready.then(()=>{const image=new frame.contentWindow.Image();image.src='assets/seasonal-companion.png';return image.decode();})})()");
+    const deviceShot=await cdp('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
+    await writeFile(path.join(output,`device-${id}.png`),Buffer.from(deviceShot.data,'base64'));
+  }
+  assert.equal(await evaluate("localStorage.getItem('imamttae:v1')"),null,'preview themes never alter saved app settings');
+  await evaluate("document.querySelector('#app-preview').contentDocument.querySelector('a[href=\"#calendar\"]').click()");
+  await waitFor("document.querySelector('#app-preview').contentDocument.querySelector('.calendar-grid')");
+  await evaluate("document.querySelector('#app-preview').contentDocument.querySelector('[data-add-task]').click()");
+  assert.equal(await evaluate("document.querySelector('#app-preview').contentDocument.querySelector('#modal').open"),true,'app interaction works within phone frame');
+  await evaluate("document.querySelector('#app-preview').contentDocument.querySelector('[data-close]').click();document.querySelector('#season').value='1';document.querySelector('#season').dispatchEvent(new Event('change'))");
+  await waitFor("document.querySelector('#app-preview').contentWindow.location.search.includes('previewMonth=1') && document.querySelector('#app-preview').contentDocument.querySelector('.calendar-grid')");
+  assert.equal(await evaluate("document.querySelector('#app-preview').contentWindow.location.hash"),'#calendar','changing preview settings preserves app page');
+  await cdp('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
+  assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'),true,'preview controls fit a narrow browser');
   assert.deepEqual(errors,[],'uncaught browser exceptions');
-  console.log('PASS: editing/search/backups/imports, last-year recap, mock Naver calendar selection/manual import/daily startup import/deduplication, storage failure, four seasons, 320px layout. Live Naver account was not used. Screenshots: test-results/');
+  console.log('PASS: app workflows, mock Naver connector, 3 device frames with exact iframe sizes, interactive preview, theme isolation, narrow layout. Live Naver account was not used. Screenshots: test-results/');
 } finally {
   socket?.close();
   browser.kill();

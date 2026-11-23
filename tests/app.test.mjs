@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { seasonForMonth, calendarCells, dateKey, sanitizeState, isDateKey, parseBackup, mergeBackup, searchEntries, CATEGORIES } from '../data.js';
 import { createServer } from '../server.mjs';
+import {DEVICES,previewOptions} from '../devices.js';
 
 test('12개월 계절 경계와 잘못된 월', () => {
   assert.deepEqual(Array.from({length:12}, (_,i) => seasonForMonth(i+1)), ['winter','winter','spring','spring','spring','summer','summer','summer','autumn','autumn','autumn','winter']);
@@ -63,14 +64,23 @@ test('기록은 내용·날짜로 검색하고 원본 배열을 변경하지 않
   assert.equal(searchEntries(entries,'')[0].id,'b');
   assert.equal(entries[0].id,'a');
 });
+test('기기 미리보기는 알려진 기종과 유효한 월만 허용한다',()=>{
+  assert.deepEqual(previewOptions('?previewDevice=iphone16&previewMonth=4'),{device:'iphone16',month:4});
+  assert.equal(previewOptions('?previewDevice=unknown&previewMonth=4'),null);
+  assert.equal(previewOptions('?previewDevice=__proto__'),null);
+  assert.equal(previewOptions('?previewDevice=iphone16&previewMonth=99').month,null);
+  assert.equal(DEVICES.iphone16.width,393);
+  assert.equal(DEVICES.galaxys24.height,780);
+});
 test('서버는 앱 자산을 제공하고 저장소 내부 파일을 차단한다', async () => {
   const server = createServer();
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
   try {
-    for (const name of ['','styles.css','app.js','data.js','assets/icon.svg','assets/seasonal-companion.png']) {
+    for (const name of ['','preview','preview/','preview.css','preview.js','devices.js','styles.css','app.js','data.js','assets/icon.svg','assets/seasonal-companion.png']) {
       const response = await fetch(`${base}/${name}`);
       assert.equal(response.status,200,name);
+      assert.ok(response.headers.get('content-security-policy').includes("frame-ancestors 'self'"));
       assert.ok((await response.arrayBuffer()).byteLength > 0);
     }
     for (const name of ['.git/config','package.json','docs/DEVELOPMENT.md','missing.js']) assert.equal((await fetch(`${base}/${name}`)).status,404);

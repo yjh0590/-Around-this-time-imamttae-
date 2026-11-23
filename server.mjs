@@ -5,7 +5,7 @@ import path from 'node:path';
 import {createNaverClient, NaverConnectionError} from './naver-caldav.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
-const allowed = new Set(['index.html','styles.css','app.js','data.js','imports.js','journal.js','naver.js','assets/icon.svg','assets/seasonal-companion.png']);
+const allowed = new Set(['index.html','styles.css','app.js','data.js','imports.js','journal.js','naver.js','devices.js','preview.html','preview.css','preview.js','assets/icon.svg','assets/seasonal-companion.png']);
 const types = { '.html':'text/html; charset=utf-8', '.css':'text/css; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.svg':'image/svg+xml', '.png':'image/png' };
 export function createServer({naverClient=createNaverClient({username:process.env.NAVER_CALDAV_USERNAME,password:process.env.NAVER_CALDAV_APP_PASSWORD})}={}) {
   let syncing=false;
@@ -13,6 +13,7 @@ export function createServer({naverClient=createNaverClient({username:process.en
     let pathname;
     try { pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname).replace(/^\/+/, '') || 'index.html'; }
     catch { response.writeHead(400).end('Bad request'); return; }
+    if(pathname==='preview' || pathname==='preview/') pathname='preview.html';
     if(pathname.startsWith('api/naver/')) {
       const json=(status,value)=>response.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}).end(JSON.stringify(value));
       const host=request.headers.host || '';
@@ -39,7 +40,7 @@ export function createServer({naverClient=createNaverClient({username:process.en
     if (!allowed.has(pathname)) { response.writeHead(404).end('Not found'); return; }
     try {
       const content = await readFile(path.join(root, pathname));
-      response.writeHead(200, { 'Content-Type':types[path.extname(pathname)], 'X-Content-Type-Options':'nosniff', 'Cache-Control':'no-cache', 'Content-Security-Policy':"default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'" });
+      response.writeHead(200, { 'Content-Type':types[path.extname(pathname)], 'X-Content-Type-Options':'nosniff', 'Cache-Control':'no-cache', 'Content-Security-Policy':"default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'" });
       response.end(request.method === 'HEAD' ? undefined : content);
     } catch { response.writeHead(500).end('Unable to read file'); }
   });
