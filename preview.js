@@ -26,7 +26,7 @@ function update() {
   phone.dataset.family=model.family;
   phone.style.setProperty('--screen-width',`${model.width}px`);
   phone.style.setProperty('--screen-height',`${model.height}px`);
-  const hash=frame.contentWindow?.location.hash || '#today';
+  const hash=frame.contentWindow?.location.hash || (['#today','#calendar','#records'].includes(location.hash) ? location.hash : '#today');
   const query=new URLSearchParams({previewDevice:device.value,previewMonth:season.value || String(new Date().getMonth()+1)});
   frame.title=`${model.name}에서 이맘때 미리보기`;
   frame.src=`/?${query}${hash}`;

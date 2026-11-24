@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import { createServer } from '../server.mjs';
-import { lastYearRange } from '../data.js';
+import { lastYearRange,dateKey } from '../data.js';
 
 // No browser-test dependency: Chrome DevTools Protocol over Node's WebSocket.
 const browserPath = process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
@@ -81,6 +81,8 @@ try {
   await waitFor("document.querySelector('.record-card')");
   assert.equal(await evaluate("document.querySelector('.record-card p').textContent"),'<img src=x onerror=alert(1)> 계절 기록');
   assert.equal(await evaluate("document.querySelector('.record-card img')"),null,'record text must not become HTML');
+  await evaluate("document.querySelector('.record-card .entry-options summary').click()");
+  assert.equal(await evaluate("document.querySelector('.record-card .entry-options').open"),true,'record actions open from an accessible menu');
   await evaluate("document.querySelector('[data-edit-record]').click(); document.querySelector('#record-text').value = '오늘의 계절 기록 수정'; document.querySelector('#record-date').value='2030-01-15'; document.querySelector('#record-text').dispatchEvent(new Event('input',{bubbles:true})); document.querySelector('#record-form').requestSubmit()");
   assert.equal(await evaluate("document.querySelector('.record-card p').textContent"),'오늘의 계절 기록 수정');
   assert.equal(await evaluate("document.querySelector('.record-card time').dateTime"),'2030-01-15','record date can change');
@@ -346,6 +348,27 @@ try {
   await waitFor("document.querySelector('#app-preview').contentDocument.querySelector('[data-save-weather]')");
   const weatherShot=await cdp('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
   await writeFile(path.join(output,'device-weather-demo.png'),Buffer.from(weatherShot.data,'base64'));
+  await evaluate("document.querySelector('#app-preview').contentDocument.querySelector('[data-close]').click()");
+  await evaluate("document.querySelector('#device').value='iphone16';document.querySelector('#season').value='10';document.querySelector('#device').dispatchEvent(new Event('change'))");
+  await waitFor("document.querySelector('#app-preview').contentDocument?.documentElement?.dataset.devicePreview==='iphone16' && document.querySelector('#app-preview').contentDocument.querySelector('.archive-page')");
+  await evaluate("document.querySelector('#app-preview').contentWindow.scrollTo(0,0)");
+  const emptyArchive=await cdp('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
+  await writeFile(path.join(output,'device-records-empty.png'),Buffer.from(emptyArchive.data,'base64'));
+  const sampleDay=dateKey(new Date());
+  const samplePrevious=new Date();samplePrevious.setDate(samplePrevious.getDate()-1);
+  // Only this isolated browser test profile receives fictional layout fixtures.
+  const archiveFixture={tasks:[],entries:[{id:'layout-diary',date:sampleDay,text:'점심을 먹고 조금 돌아서 걸었다.\n은행나무 아래에 잎이 많이 떨어져 있었다.'},{id:'layout-diary-previous',date:dateKey(samplePrevious),text:'엄마랑 통화. 다음 주에 집에 가기로 했다.'}],memories:[{id:'layout-expense',type:'expenses',date:sampleDay,title:'동네 빵집',amount:5200,source:'화면 검증용 가상 기록',text:''}],categories:['calendar','photos','expenses','diary','world']};
+  await evaluate(`localStorage.setItem('imamttae:v1',${JSON.stringify(JSON.stringify(archiveFixture))});document.querySelector('#app-preview').contentWindow.location.reload()`);
+  await waitFor("document.querySelector('#app-preview').contentDocument?.querySelector('.archive-day .record-card')");
+  assert.equal(await evaluate("document.querySelector('#app-preview').contentDocument.querySelectorAll('.archive-sections button').length"),5,'five core record sections stay visible');
+  assert.equal(await evaluate("document.querySelector('#app-preview').contentDocument.querySelectorAll('.archive-day').length"),2,'date rail groups entries by day');
+  await evaluate("document.querySelector('#app-preview').contentDocument.fonts.ready");
+  const archiveShot=await cdp('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
+  await writeFile(path.join(output,'device-records-demo.png'),Buffer.from(archiveShot.data,'base64'));
+  await evaluate("document.querySelector('#app-preview').contentDocument.querySelector('.entry-options summary').click()");
+  assert.equal(await evaluate("document.querySelector('#app-preview').contentDocument.querySelector('.entry-options').open"),true);
+  await evaluate("document.querySelector('#app-preview').contentDocument.querySelector('[data-edit-record]').click()");
+  assert.ok(await evaluate("document.querySelector('#app-preview').contentDocument.querySelector('#record-text').value.includes('은행나무')"));
   await evaluate("document.querySelector('#app-preview').contentDocument.querySelector('[data-close]').click()");
   await cdp('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
   assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'),true,'preview controls fit a narrow browser');

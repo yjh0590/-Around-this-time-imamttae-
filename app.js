@@ -1,6 +1,6 @@
 import { SEASONS, MONTH_NOTES, seasonForMonth, dateKey, localDate, calendarCells, sanitizeState, isDateKey, parseBackup, mergeBackup, CATEGORIES, timelineItems, lastYearRange, safeLink } from './data.js';
 import { parseCalendar, parseExpenses, parseDiary, preparePhoto } from './imports.js';
-import { journalShell, journalResults, memoryCard, connectionsContent, sourcePreview,expensePanel,diaryConnectionContent,diaryPreview } from './journal.js';
+import { journalShell, journalResults, memoryCard, entryActions,connectionsContent, sourcePreview,expensePanel,diaryConnectionContent,diaryPreview } from './journal.js';
 import {REPEATS,scheduleDates} from './planning.js';
 import {WEATHER_REGIONS,WEATHER_SOURCE,weatherDescription} from './weather-data.js';
 import {naverStatus,naverCalendars,syncNaver,naverPanel,calendarChoices} from './naver.js';
@@ -109,7 +109,7 @@ function renderCalendar() {
   }).join('')}</div></section><div class="card-head selected-heading"><h2>${fullDate(selectedDate)}</h2><button class="small-button" data-add-task="${selected}">${icon('plus')} 일정</button></div><section class="card">${taskRows(selected)}</section><div class="card-head selected-heading"><h2>이날의 기록</h2><button class="small-button" data-add-record="${selected}">${icon('plus')} 기록</button></div>${state.entries.filter(e => e.date === selected).map(recordCard).join('') || '<p class="empty">이날의 순간을 한 줄로 남겨보세요.</p>'}${state.memories.filter(memory=>memory.date === selected && state.categories.includes(memory.type)).map(memoryCard).join('')}`;
 }
 function recordCard(entry) {
-  return `<article class="card record-card"><div class="record-head"><time datetime="${escapeHTML(entry.date)}">${escapeHTML(entry.date.replaceAll('-', '. '))}</time><div class="record-actions"><button class="delete-button" data-edit-record="${escapeHTML(entry.id)}" aria-label="${escapeHTML(entry.date)} 기록 수정">${icon('records')}</button><button class="delete-button" data-delete-record="${escapeHTML(entry.id)}" aria-label="${escapeHTML(entry.date)} 기록 삭제">${icon('bin')}</button></div></div><p>${escapeHTML(entry.text)}</p>${entry.source ? `<p class="source-caption">${escapeHTML(entry.source)}</p>` : ''}</article>`;
+  return `<article class="card record-card diary-entry"><div class="record-head"><time datetime="${escapeHTML(entry.date)}">${escapeHTML(entry.date.replaceAll('-', '. '))}</time><span class="diary-label">일기</span>${entryActions('record',entry.id,`${entry.date} 일기`)}</div><p>${escapeHTML(entry.text)}</p>${entry.source ? `<p class="source-caption">${escapeHTML(entry.source)}</p>` : ''}</article>`;
 }
 function renderRecords() {
   if (journalFilter !== 'all' && !state.categories.includes(journalFilter)) journalFilter = 'all';
@@ -125,7 +125,7 @@ function renderRecordResults() {
   let filteredState = journalRange ? {...state,tasks:state.tasks.filter(item=>inRange(item)),entries:state.entries.filter(item=>inRange(item)),memories:state.memories.filter(item=>inRange(item))} : state;
   if(journalFilter==='expenses') filteredState={...filteredState,memories:filteredState.memories.filter(item=>item.date.startsWith(expenseMonth))};
   const result = journalResults(filteredState, recordQuery, journalFilter, recordCard, taskRows);
-  document.querySelector('#search-count').textContent = `${result.count}개의 기록을 모았어요.`;
+  document.querySelector('#search-count').textContent = `${result.count}개`;
   results.innerHTML = result.html;
 }
 function inRange(item) { return item.date >= journalRange.start && item.date <= journalRange.end; }
