@@ -21,7 +21,7 @@ npm start
 
 **기종 프레임 미리보기:** <http://localhost:3000/preview>. iPhone 16·iPhone 16 Pro·Galaxy S24를 선택하고, 계절과 표시 배율을 바꿀 수 있습니다. 프레임 안에서 실제 앱을 조작합니다. 실제 기기나 운영체제를 실행하는 에뮬레이터는 아닙니다. [미리보기 사용법](docs/DEVICE_PREVIEW.md)
 
-**기억 돌아보기:** <http://localhost:3000/preview#records>. 작년 이맘때의 사진과 그날 쓴 문장을 먼저 만나고, 화살표·방향키·스와이프로 다른 날을 펼쳐봅니다. ‘그날로 돌아가기’로 날짜별 전체 기록을 읽을 수 있습니다. [회상 화면과 디자인](docs/RECORDS_DESIGN.md)
+**기억 돌아보기:** <http://localhost:3000/preview#records>. 작년 이맘때의 사진과 그날 쓴 문장을 먼저 만나고, 화살표·방향키·스와이프로 다른 날을 펼쳐봅니다. ‘그날의 기록 보기’로 날짜별 전체 기록을 읽을 수 있습니다. [회상 화면과 디자인](docs/RECORDS_DESIGN.md)
 
 ## 구현한 기능
 
