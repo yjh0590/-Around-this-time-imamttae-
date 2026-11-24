@@ -1,4 +1,4 @@
-import {timelineItems,dateKey,lastYearRange} from './data.js';
+import {timelineItems,dateKey,lastYearRange,safeLink,WORLD_KINDS} from './data.js';
 import {escapeHTML as e} from './journal.js';
 
 export function memoryDays(state,now=new Date(),filter='all') {
@@ -24,7 +24,49 @@ export function memoryDistance(date,now=new Date()) {
   if(difference===1)return '어제';
   return difference>0 ? `${difference.toLocaleString('ko-KR')}일 전` : '기록';
 }
-export function memoryStage(days,date,{now=new Date(),direction=0,rangeActive=false}={}) {
+export function worldContext(memories,date,today) {
+  const anchor=Date.parse(date);
+  const exact=[];
+  const nearby=[];
+  for (const item of memories) {
+    if (item.type!=='world' || item.date>=today) continue;
+    const gap=Math.abs(Date.parse(item.date)-anchor)/86400000;
+    if (gap===0) exact.push(item);
+    else if (gap<=7 && ['event','local'].includes(item.worldKind)) nearby.push({item,gap});
+  }
+  nearby.sort((a,b)=>a.gap-b.gap || b.item.date.localeCompare(a.item.date));
+  return {exact,nearby:nearby.map(({item})=>item)};
+}
+
+function worldPanel(date,{exact,nearby}) {
+  const groups=[['그날',exact],['그 무렵',nearby]];
+  return `<details class="memory-world-context" data-world-context="${date}">
+    <summary>그날의 바깥</summary>
+    ${groups.filter(([,items])=>items.length).map(([label,items])=>`<section class="memory-world-group">
+      <h3>${label}</h3>
+      <ul>${items.map(item=>{
+        const sourceUrl=safeLink(item.url);
+        const currentUrl=safeLink(item.currentUrl);
+        const kind=WORLD_KINDS[item.worldKind] || (item.id.startsWith('weather:') ? '날씨' : '자료');
+        return `<li>
+          <p class="context-meta"><time datetime="${item.date}">${item.date}</time> · ${e(kind)}${item.area ? ` · ${e(item.area)}` : ''}</p>
+          <p class="context-title">${e(item.title)}</p>
+          ${item.text ? `<p class="context-text">${e(item.text)}</p>` : ''}
+          <p class="context-meta">${e(item.source)}</p>
+          <div class="context-actions">
+            ${sourceUrl ? `<a href="${e(sourceUrl)}" target="_blank" rel="noopener noreferrer">${item.worldKind==='local' || item.worldKind==='event' ? '당시 소식' : '출처 보기'} ↗</a>` : ''}
+            ${currentUrl ? `<a href="${e(currentUrl)}" target="_blank" rel="noopener noreferrer">현재 정보 확인 ↗</a>` : ''}
+            ${item.worldKind==='local' ? `<button data-context-plan="${e(item.id)}">일정에 담기</button>` : ''}
+          </div>
+        </li>`;
+      }).join('')}</ul>
+    </section>`).join('')}
+    ${exact.length || nearby.length ? '' : '<p class="context-meta">이 날짜 근처에 저장한 소식이 없어요.</p>'}
+    <button class="context-add" data-add-world="${date}">소식 남기기</button>
+  </details>`;
+}
+
+export function memoryStage(days,date,{now=new Date(),direction=0,rangeActive=false,context=null}={}) {
   const index=days.findIndex(day=>day.date===date);
   const day=days[index];
   const lastYearButton='<button class="memory-year" data-show-lastyear>작년 이맘때</button>';
@@ -66,5 +108,6 @@ export function memoryStage(days,date,{now=new Date(),direction=0,rangeActive=fa
       <div class="recollection-bottom">
         <button data-memory-open="${day.date}">그날의 기록 보기 <span aria-hidden="true">→</span></button>
       </div>
+      ${context ? worldPanel(day.date,context) : ''}
     </section>`;
 }

@@ -371,6 +371,12 @@ try {
   assert.ok(await evaluate("document.querySelector('#app-preview').contentDocument.querySelector('#record-text').value.includes('은행나무')"));
   await evaluate("document.querySelector('#app-preview').contentDocument.querySelector('[data-close]').click()");
   const recollectionDate=lastYearRange(new Date()).anchor;
+  const nearbyDate=new Date(`${recollectionDate}T12:00:00`);
+  nearbyDate.setDate(nearbyDate.getDate()-2);
+  archiveFixture.memories.push(
+    {id:'layout-event',type:'world',worldKind:'event',date:recollectionDate,title:'전국대회 결승전이 열렸다',source:'검증용 소식',url:'https://example.com/news'},
+    {id:'layout-local',type:'world',worldKind:'local',area:'우리 동네',date:dateKey(nearbyDate),title:'하천 산책로가 다시 열렸다',source:'검증용 공지',url:'https://example.com/notice',currentUrl:'https://example.com/current'},
+  );
   archiveFixture.entries.push({id:'layout-lastyear',date:recollectionDate,text:'오랜만에 둘이 산책했다.\n춥다고 들어간 작은 카페에서\n해가 질 때까지 이야기를 나눴다.'});
   await evaluate(`localStorage.setItem('imamttae:v1',${JSON.stringify(JSON.stringify(archiveFixture))});document.querySelector('#app-preview').contentWindow.location.reload()`);
   await waitFor(`document.querySelector('#app-preview').contentDocument?.querySelector('.recollection time')?.dateTime==='${recollectionDate}'`);
@@ -382,6 +388,22 @@ try {
   await evaluate("document.querySelector('#app-preview').contentWindow.scrollTo(0,0)");
   const recollectionShot=await cdp('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
   await writeFile(path.join(output,'device-recollection-demo.png'),Buffer.from(recollectionShot.data,'base64'));
+  assert.equal(await evaluate(`${frameDoc}.querySelector('[data-world-context]').open`),false);
+  await evaluate(`${frameDoc}.querySelector('[data-world-context] summary').click()`);
+  assert.deepEqual(await evaluate(`Array.from(${frameDoc}.querySelectorAll('.memory-world-group h3'),item=>item.textContent)`),['그날','그 무렵']);
+  assert.ok(await evaluate(`${frameDoc}.querySelector('[data-world-context]').textContent.includes('우리 동네')`));
+  assert.equal(await evaluate(`${frameDoc}.querySelector('a[href="https://example.com/current"]').textContent.trim()`),'현재 정보 확인 ↗');
+  await evaluate(`${frameDoc}.querySelector('[data-world-context]').scrollIntoView({block:'center'})`);
+  const contextShot=await cdp('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
+  await writeFile(path.join(output,'device-world-context.png'),Buffer.from(contextShot.data,'base64'));
+  await evaluate(`${frameDoc}.querySelector('[data-context-plan]').click()`);
+  assert.equal(await evaluate(`${frameDoc}.querySelector('#task-title').value`),'우리 동네 둘러보기');
+  await evaluate(`${frameDoc}.querySelector('[data-close]').click();${frameDoc}.querySelector('.context-add').click()`);
+  assert.equal(await evaluate(`${frameDoc}.querySelector('#memory-date').value`),recollectionDate);
+  await evaluate(`(()=>{const doc=${frameDoc};const kind=doc.querySelector('#memory-kind');kind.value='local';kind.dispatchEvent(new doc.defaultView.Event('change',{bubbles:true}));doc.querySelector('#memory-area').value='책방 골목';doc.querySelector('#memory-title').value='새 가로등이 켜졌다';doc.querySelector('#memory-form').requestSubmit();})()`);
+  assert.equal(await evaluate(`${frameDoc}.querySelector('[data-world-context]').open`),true);
+  assert.ok(await evaluate(`${frameDoc}.querySelector('[data-world-context]').textContent.includes('직접 남긴 메모')`));
+  await evaluate(`${frameDoc}.querySelector('[data-world-context] summary').click();${frameDoc}.defaultView.scrollTo(0,0)`);
   await evaluate(`${frameDoc}.querySelector('[data-memory-step="-1"]').click()`);
   assert.equal(await evaluate(`${frameDoc}.querySelector('.recollection time').dateTime`),dateKey(samplePrevious),'newer memory excludes today');
   await evaluate(`(()=>{const doc=${frameDoc},win=doc.defaultView;doc.querySelector('[data-memory-stage]').dispatchEvent(new win.KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));})()`);

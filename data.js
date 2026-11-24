@@ -88,6 +88,7 @@ export function mergeBackup(current, incoming) {
 }
 
 export const CATEGORIES = { calendar:'캘린더', photos:'사진', expenses:'가계부', diary:'일기', world:'그 무렵의 세상' };
+export const WORLD_KINDS = { link:'링크·자료', event:'세상의 사건', local:'동네 변화' };
 export function safeLink(value) {
   try { const url = new URL(value); return ['https:','http:'].includes(url.protocol) && !url.username && !url.password ? url.href : ''; } catch { return ''; }
 }
@@ -96,11 +97,25 @@ function validMemory(item) {
   if (item.text != null && (typeof item.text !== 'string' || item.text.length > 2000)) return false;
   if (item.type === 'photos' && (typeof item.imageData !== 'string' || item.imageData.length > 350000 || !/^data:image\/jpeg;base64,[A-Za-z0-9+/]+=*$/.test(item.imageData))) return false;
   if (item.type === 'expenses' && (!Number.isSafeInteger(item.amount) || item.amount <= 0 || item.amount > 1e12)) return false;
-  if (item.type === 'world' && !safeLink(item.url)) return false;
+  if (item.type === 'world') {
+    const kind=item.worldKind ?? 'link';
+    if (typeof kind!=='string' || !Object.hasOwn(WORLD_KINDS,kind)) return false;
+    if (!safeLink(item.url) && !(kind==='local' && item.url==='')) return false;
+    if (kind==='local' && (typeof item.area!=='string' || !item.area.trim() || item.area.length>80)) return false;
+    if (item.currentUrl!==undefined && (typeof item.currentUrl!=='string' || item.currentUrl && !safeLink(item.currentUrl))) return false;
+  }
   return true;
 }
 function cleanMemory(item) {
-  return {id:item.id,type:item.type,date:item.date,title:item.title,source:item.source,text:item.text || '',...(item.type === 'photos' ? {imageData:item.imageData,dateBasis: ['촬영일','파일명','직접 선택'].includes(item.dateBasis) ? item.dateBasis : '직접 선택'} : {}),...(item.type === 'expenses' ? {amount:item.amount} : {}),...(item.type === 'world' ? {url:safeLink(item.url)} : {})};
+  const cleaned={id:item.id,type:item.type,date:item.date,title:item.title,source:item.source,text:item.text || ''};
+  if (item.type==='photos') return {...cleaned,imageData:item.imageData,dateBasis:['촬영일','파일명','직접 선택'].includes(item.dateBasis) ? item.dateBasis : '직접 선택'};
+  if (item.type==='expenses') return {...cleaned,amount:item.amount};
+  if (item.type!=='world') return cleaned;
+  cleaned.url=safeLink(item.url);
+  if (item.worldKind && item.worldKind!=='link') cleaned.worldKind=item.worldKind;
+  if (item.worldKind==='local') cleaned.area=item.area.trim();
+  if (item.currentUrl) cleaned.currentUrl=safeLink(item.currentUrl);
+  return cleaned;
 }
 export function timelineItems(state, query = '') {
   const categories = state.categories || Object.keys(CATEGORIES);
@@ -108,7 +123,7 @@ export function timelineItems(state, query = '') {
   if (categories.includes('diary')) items.push(...state.entries.map(entry => ({...entry,type:'diary',title:entry.text,text:'',source:entry.source || '내가 쓴 일기'})));
   if (categories.includes('calendar')) items.push(...state.tasks.map(task => ({...task,type:'calendar',text:'',source:'내가 담은 일정'})));
   const needle = query.trim().normalize('NFC').toLocaleLowerCase('ko-KR');
-  return items.filter(item => categories.includes(item.type) && (!needle || `${item.date} ${item.title} ${item.text} ${item.source}`.normalize('NFC').toLocaleLowerCase('ko-KR').includes(needle))).sort((a,b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
+  return items.filter(item => categories.includes(item.type) && (!needle || `${item.date} ${item.title} ${item.text} ${item.source} ${item.area || ''}`.normalize('NFC').toLocaleLowerCase('ko-KR').includes(needle))).sort((a,b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
 }
 export function lastYearRange(date, radius = 7) {
   const year = date.getFullYear() - 1;

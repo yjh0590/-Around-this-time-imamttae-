@@ -1,11 +1,11 @@
-import { SEASONS, MONTH_NOTES, seasonForMonth, dateKey, localDate, calendarCells, sanitizeState, isDateKey, parseBackup, mergeBackup, CATEGORIES, timelineItems, lastYearRange, safeLink } from './data.js';
+import { SEASONS, MONTH_NOTES, seasonForMonth, dateKey, localDate, calendarCells, sanitizeState, isDateKey, parseBackup, mergeBackup, CATEGORIES, timelineItems, lastYearRange, safeLink, WORLD_KINDS } from './data.js';
 import { parseCalendar, parseExpenses, parseDiary, preparePhoto } from './imports.js';
 import { journalShell, journalResults, memoryCard, entryActions,connectionsContent, sourcePreview,expensePanel,diaryConnectionContent,diaryPreview } from './journal.js';
 import {REPEATS,scheduleDates} from './planning.js';
 import {WEATHER_REGIONS,WEATHER_SOURCE,weatherDescription} from './weather-data.js';
 import {naverStatus,naverCalendars,syncNaver,naverPanel,calendarChoices} from './naver.js';
 import {DEVICES,previewOptions} from './devices.js';
-import {memoryDays,suggestedMemory,memoryStage} from './recollection.js';
+import {memoryDays,suggestedMemory,memoryStage,worldContext} from './recollection.js';
 
 const devicePreview=previewOptions(location.search);
 if(devicePreview) {
@@ -116,9 +116,12 @@ function recordCard(entry) {
   return `<article class="card record-card diary-entry"><div class="record-head"><time datetime="${escapeHTML(entry.date)}">${escapeHTML(entry.date.replaceAll('-', '. '))}</time><span class="diary-label">일기</span>${entryActions('record',entry.id,`${entry.date} 일기`)}</div><p>${escapeHTML(entry.text)}</p>${entry.source ? `<p class="source-caption">${escapeHTML(entry.source)}</p>` : ''}</article>`;
 }
 function renderRecords() {
+  const openContextDate=main.querySelector('[data-world-context][open]')?.dataset.worldContext;
   if (journalFilter !== 'all' && !state.categories.includes(journalFilter)) journalFilter = 'all';
   main.innerHTML = journalShell(state, recordQuery, journalFilter);
   renderMemoryStage();
+  const context=main.querySelector('[data-world-context]');
+  if (context && context.dataset.worldContext===openContextDate) context.open=true;
   if(journalFilter==='expenses') document.querySelector('#record-search').insertAdjacentHTML('beforebegin',expensePanel(state,expenseMonth));
   const world=main.querySelector('.world-note');if(world) world.insertAdjacentHTML('beforeend','<button class="small-button" data-weather>그날의 날씨 찾기 ↗</button>');
   if (journalRange) {
@@ -147,7 +150,9 @@ function renderMemoryStage(direction=0) {
   const days=availableMemories();
   if(!days.some(day=>day.date===rememberedDate))rememberedDate=suggestedMemory(days);
   target.hidden=Boolean(recordQuery.trim());
-  target.innerHTML=memoryStage(days,rememberedDate,{direction,rangeActive:Boolean(journalRange)});
+  const context=rememberedDate && state.categories.includes('world')
+    ? worldContext(state.memories,rememberedDate,todayKey()) : null;
+  target.innerHTML=memoryStage(days,rememberedDate,{direction,rangeActive:Boolean(journalRange),context});
 }
 function stepMemory(step) {
   const days=availableMemories();const index=days.findIndex(day=>day.date===rememberedDate);
@@ -276,9 +281,39 @@ async function previewSource(input) {
   } catch(problem) { if(error.isConnected && modal.open) error.textContent=problem.message || '파일을 읽지 못했어요. 지원하는 파일인지 확인해 주세요.'; }
   finally { input.disabled=false;input.value=''; }
 }
-function openMemoryForm(type, item) {
-  const labels={expenses:'지출',photos:'사진',calendar:'가져온 일정',world:'그 무렵의 세상'};
-  openModal(`${labels[type]} ${item ? '수정' : '남기기'}`,`<form id="memory-form"><input name="memoryId" type="hidden" value="${escapeHTML(item?.id || '')}"><input name="memoryType" type="hidden" value="${type}"><label for="memory-date">기억할 날짜</label><input id="memory-date" name="date" type="date" min="0001-01-01" max="9999-12-31" value="${item?.date || todayKey()}" required><label for="memory-title">내용</label><input id="memory-title" name="title" maxlength="200" value="${escapeHTML(item?.title || '')}" required>${type === 'expenses' ? `<label for="memory-amount">지출 금액 · 원</label><input id="memory-amount" name="amount" type="number" min="1" max="1000000000000" step="1" value="${item?.amount || ''}" required>` : ''}${type === 'world' ? `<label for="memory-source">출처 이름</label><input id="memory-source" name="source" maxlength="200" value="${escapeHTML(item?.source || '')}" required><label for="memory-url">출처 링크</label><input id="memory-url" name="url" type="url" value="${escapeHTML(item?.url || '')}" required><p class="field-hint">직접 확인한 날씨·사건·뉴스를 남겨요. 외부 자료는 자동으로 수집하거나 요약하지 않아요.</p>` : ''}<label for="memory-note">메모</label><textarea id="memory-note" name="text" maxlength="2000">${escapeHTML(item?.text || '')}</textarea><p id="source-error" class="form-error" role="alert"></p><button type="submit" class="primary-button full">저장하기</button></form>`);
+function openMemoryForm(type, item, date=todayKey()) {
+  const labels={expenses:'지출',photos:'사진',calendar:'가져온 일정',world:'그날의 바깥'};
+  const kind=item?.worldKind || 'link';
+  const worldFields=type==='world' ? `
+    <label for="memory-kind">소식 종류</label>
+    <select id="memory-kind" name="worldKind">${Object.entries(WORLD_KINDS).map(([key,label])=>`<option value="${key}" ${key===kind?'selected':''}>${label}</option>`).join('')}</select>
+    <div class="memory-area" ${kind==='local'?'':'hidden'}>
+      <label for="memory-area">동네 이름</label>
+      <input id="memory-area" name="area" maxlength="80" value="${escapeHTML(item?.area || '')}" ${kind==='local'?'required':''}>
+    </div>` : '';
+  const sourceFields=type==='world' ? `
+    <label for="memory-source">출처 이름</label>
+    <input id="memory-source" name="source" maxlength="200" value="${escapeHTML(item?.url ? item.source : '')}" ${kind==='local'?'':'required'}>
+    <label for="memory-url">당시 자료 링크</label>
+    <input id="memory-url" name="url" type="url" value="${escapeHTML(item?.url || '')}" ${kind==='local'?'':'required'}>
+    <p class="field-hint">직접 본 동네 변화는 링크 없이 남길 수 있어요.</p>
+    <label for="memory-current-url">현재 정보 링크 (선택)</label>
+    <input id="memory-current-url" name="currentUrl" type="url" value="${escapeHTML(item?.currentUrl || '')}">` : '';
+  openModal(`${labels[type]} ${item ? '수정' : '남기기'}`,`<form id="memory-form">
+    <input name="memoryId" type="hidden" value="${escapeHTML(item?.id || '')}">
+    <input name="memoryType" type="hidden" value="${type}">
+    ${worldFields}
+    <label for="memory-date">${type==='world' ? '일어난 날 또는 직접 본 날' : '기억할 날짜'}</label>
+    <input id="memory-date" name="date" type="date" min="0001-01-01" max="9999-12-31" value="${item?.date || date}" required>
+    <label for="memory-title">내용</label>
+    <input id="memory-title" name="title" maxlength="200" value="${escapeHTML(item?.title || '')}" required>
+    ${type === 'expenses' ? `<label for="memory-amount">지출 금액 · 원</label><input id="memory-amount" name="amount" type="number" min="1" max="1000000000000" step="1" value="${item?.amount || ''}" required>` : ''}
+    ${sourceFields}
+    <label for="memory-note">메모</label>
+    <textarea id="memory-note" name="text" maxlength="2000">${escapeHTML(item?.text || '')}</textarea>
+    <p id="source-error" class="form-error" role="alert"></p>
+    <button type="submit" class="primary-button full">저장하기</button>
+  </form>`);
 }
 function openWeather() {
   pendingWeather=null;
@@ -345,7 +380,19 @@ document.addEventListener('submit',event=>{
     const date=data.get('date');
     const item={...previous,id:id || crypto.randomUUID(),type,date,title:String(data.get('title') || '').trim(),text:String(data.get('text') || '').trim(),source:previous?.source || '직접 쓴 가계부'};
     if(type==='expenses') item.amount=Number(data.get('amount'));
-    if(type==='world') {item.url=safeLink(data.get('url'));item.source=String(data.get('source') || '').trim();}
+    if(type==='world') {
+      item.worldKind=data.get('worldKind');
+      item.area=String(data.get('area') || '').trim();
+      const url=String(data.get('url') || '').trim();
+      const currentUrl=String(data.get('currentUrl') || '').trim();
+      item.url=safeLink(url);
+      item.currentUrl=safeLink(currentUrl);
+      if ((url && !item.url) || (currentUrl && !item.currentUrl)) {
+        error.textContent='http 또는 https 링크를 입력해 주세요.';
+        return;
+      }
+      item.source=item.worldKind==='local' && !item.url ? '직접 남긴 메모' : String(data.get('source') || '').trim();
+    }
     if(type==='photos' && date!==previous.date) item.dateBasis='직접 선택';
     const verified=sanitizeState({...state,memories:[item]}).memories;
     if(!verified.length) {error.textContent='실제 날짜·내용·금액·출처 링크를 확인해 주세요.';return;}
@@ -442,7 +489,11 @@ document.addEventListener('click', event => {
   else if ('deleteMemory' in d) openModal('기록을 삭제할까요?', `<p class="modal-text">선택한 기록만 삭제해요. 원본 파일은 변경하지 않아요.</p><button class="primary-button full" data-confirm-memory="${escapeHTML(d.deleteMemory)}">삭제하기</button>`);
   else if ('confirmMemory' in d) { const next={...state,memories:state.memories.filter(item=>item.id!==d.confirmMemory)}; if(save(next)) {state=next;modal.close();render();} }
   else if ('addExpense' in d) openMemoryForm('expenses');
-  else if ('addWorld' in d) openMemoryForm('world');
+  else if ('addWorld' in d) openMemoryForm('world',undefined,isDateKey(d.addWorld) ? d.addWorld : todayKey());
+  else if ('contextPlan' in d) {
+    const item=state.memories.find(memory=>memory.id===d.contextPlan && memory.worldKind==='local');
+    if (item) openTask(todayKey(),`${item.area} 둘러보기`.slice(0,100));
+  }
   else if ('auto' in d) { state.month = null; save(); render(); }
   else if ('addTask' in d) openTask(d.addTask);
   else if ('suggestTask' in d) openTask(todayKey(), theme().task);
@@ -488,6 +539,14 @@ document.addEventListener('click', event => {
 });
 document.addEventListener('change', event => {
   if (event.target.id === 'month-select') { state.month = Number(event.target.value) || null; save(); render(); }
+  else if (event.target.id === 'memory-kind') {
+    const local=event.target.value==='local';
+    const form=event.target.form;
+    form.querySelector('.memory-area').hidden=!local;
+    form.elements.area.required=local;
+    form.elements.source.required=!local;
+    form.elements.url.required=!local;
+  }
   else if (event.target.id === 'backup-file') previewBackup(event.target.files[0]);
   else if (['calendar-file','expense-file','photo-files','diary-file'].includes(event.target.id)) previewSource(event.target);
   else if(event.target.id==='expense-month' && /^\d{4}-(0[1-9]|1[0-2])$/.test(event.target.value)) {expenseMonth=event.target.value;renderRecords();}

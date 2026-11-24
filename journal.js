@@ -1,4 +1,4 @@
-import { CATEGORIES, timelineItems, dateKey, safeLink } from './data.js';
+import { CATEGORIES, timelineItems, dateKey, safeLink, WORLD_KINDS } from './data.js';
 import {expenseSummary} from './planning.js';
 
 export const escapeHTML = value => String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
@@ -10,7 +10,19 @@ export function entryActions(kind,id,label) {
   return `<details class="entry-options"><summary aria-label="${e(label)} 메뉴">···</summary><div class="entry-menu"><button data-edit-${kind}="${e(id)}">수정</button><button data-delete-${kind}="${e(id)}">삭제</button></div></details>`;
 }
 export function memoryCard(item) {
-  return `<article class="card memory-card memory-${item.type}"><div class="record-head"><span class="source-badge">${CATEGORIES[item.type]}</span>${entryActions('memory',item.id,item.title)}</div>${item.type === 'photos' ? `<button class="photo-button" data-open-photo="${e(item.id)}" aria-label="${e(item.title)} 크게 보기"><img class="memory-photo" loading="lazy" src="${e(item.imageData)}" alt="${e(item.title)}"></button>` : ''}<h3 class="${item.type==='photos' && /\.(jpe?g|png|webp)$/i.test(item.title) ? 'photo-filename' : ''}">${e(item.title)}</h3>${item.type === 'expenses' ? `<p class="expense-amount">${item.amount.toLocaleString('ko-KR')}원</p>` : ''}${item.text ? `<p class="memory-text">${e(item.text)}</p>` : ''}${item.type === 'world' && safeLink(item.url) ? `<a class="source-link" href="${e(safeLink(item.url))}" target="_blank" rel="noopener noreferrer">원문 ↗</a>` : ''}<p class="source-caption">${e(item.source)}${item.dateBasis ? ` · ${e(item.dateBasis)}` : ''}</p></article>`;
+  const label=WORLD_KINDS[item.worldKind] || CATEGORIES[item.type];
+  const sourceUrl=item.type==='world' ? safeLink(item.url) : '';
+  const currentUrl=item.type==='world' ? safeLink(item.currentUrl) : '';
+  return `<article class="card memory-card memory-${item.type}">
+    <div class="record-head"><span class="source-badge">${e(label)}${item.area ? ` · ${e(item.area)}` : ''}</span>${entryActions('memory',item.id,item.title)}</div>
+    ${item.type==='photos' ? `<button class="photo-button" data-open-photo="${e(item.id)}" aria-label="${e(item.title)} 크게 보기"><img class="memory-photo" loading="lazy" src="${e(item.imageData)}" alt="${e(item.title)}"></button>` : ''}
+    <h3 class="${item.type==='photos' && /\.(jpe?g|png|webp)$/i.test(item.title) ? 'photo-filename' : ''}">${e(item.title)}</h3>
+    ${item.type==='expenses' ? `<p class="expense-amount">${item.amount.toLocaleString('ko-KR')}원</p>` : ''}
+    ${item.text ? `<p class="memory-text">${e(item.text)}</p>` : ''}
+    ${sourceUrl ? `<a class="source-link" href="${e(sourceUrl)}" target="_blank" rel="noopener noreferrer">${item.worldKind?'당시 소식':'원문'} ↗</a>` : ''}
+    ${currentUrl ? `<a class="source-link" href="${e(currentUrl)}" target="_blank" rel="noopener noreferrer">현재 정보 확인 ↗</a>` : ''}
+    <p class="source-caption">${e(item.source)}${item.dateBasis ? ` · ${e(item.dateBasis)}` : ''}</p>
+  </article>`;
 }
 
 export function journalShell(state, query, filter) {
