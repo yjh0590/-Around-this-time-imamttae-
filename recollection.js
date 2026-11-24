@@ -49,10 +49,9 @@ function worldPanel(date,{exact,nearby}) {
         const currentUrl=safeLink(item.currentUrl);
         const kind=WORLD_KINDS[item.worldKind] || (item.id.startsWith('weather:') ? '날씨' : '자료');
         return `<li>
-          <p class="context-meta"><time datetime="${item.date}">${item.date}</time> · ${e(kind)}${item.area ? ` · ${e(item.area)}` : ''}</p>
           <p class="context-title">${e(item.title)}</p>
           ${item.text ? `<p class="context-text">${e(item.text)}</p>` : ''}
-          <p class="context-meta">${e(item.source)}</p>
+          <p class="context-meta"><time datetime="${item.date}">${item.date}</time> · ${e(kind)}${item.area ? ` · ${e(item.area)}` : ''} · ${e(item.source)}</p>
           <div class="context-actions">
             ${sourceUrl ? `<a href="${e(sourceUrl)}" target="_blank" rel="noopener noreferrer">${item.worldKind==='local' || item.worldKind==='event' ? '당시 소식' : '출처 보기'} ↗</a>` : ''}
             ${currentUrl ? `<a href="${e(currentUrl)}" target="_blank" rel="noopener noreferrer">현재 정보 확인 ↗</a>` : ''}
@@ -98,11 +97,9 @@ export function memoryStage(days,date,{now=new Date(),direction=0,rangeActive=fa
       </div>
       <div id="memory-stage" class="memory-stage ${motionClass}" data-memory-stage ${days.length>1?'data-swipeable':''} tabindex="0" role="group" aria-label="${e(fullDate)}. ${memoryDistance(day.date,now)}.${days.length>1?' 좌우 방향키나 스와이프로 넘기기':''}">
         <div class="memory-paper">
+          <time datetime="${day.date}">${e(fullDate)}</time>
           ${photo?`<figure class="recollection-figure"><img class="recollection-photo" src="${e(photo.imageData)}" alt="${e(photo.title)}" draggable="false"></figure>`:''}
-          <div class="recollection-writing">
-            <time datetime="${day.date}">${e(fullDate)}</time>
-            ${written ? `<blockquote>${e(written)}</blockquote>` : ''}
-          </div>
+          ${written ? `<blockquote>${e(written)}</blockquote>` : ''}
         </div>
       </div>
       <div class="recollection-bottom">
