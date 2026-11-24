@@ -6,7 +6,7 @@ import {createNaverClient, NaverConnectionError} from './naver-caldav.mjs';
 import {createWeatherClient,WeatherError} from './weather.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
-const allowed = new Set(['index.html','styles.css','app.js','data.js','imports.js','journal.js','planning.js','weather-data.js','naver.js','devices.js','preview.html','preview.css','preview.js','assets/icon.svg','assets/seasonal-companion.png']);
+const allowed = new Set(['index.html','styles.css','app.js','data.js','imports.js','journal.js','recollection.js','planning.js','weather-data.js','naver.js','devices.js','preview.html','preview.css','preview.js','assets/icon.svg','assets/seasonal-companion.png']);
 const types = { '.html':'text/html; charset=utf-8', '.css':'text/css; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.svg':'image/svg+xml', '.png':'image/png' };
 export function createServer({naverClient=createNaverClient({username:process.env.NAVER_CALDAV_USERNAME,password:process.env.NAVER_CALDAV_APP_PASSWORD}),weatherClient=createWeatherClient()}={}) {
   let syncing=false;

@@ -5,6 +5,7 @@ import {REPEATS,scheduleDates} from './planning.js';
 import {WEATHER_REGIONS,WEATHER_SOURCE,weatherDescription} from './weather-data.js';
 import {naverStatus,naverCalendars,syncNaver,naverPanel,calendarChoices} from './naver.js';
 import {DEVICES,previewOptions} from './devices.js';
+import {memoryDays,suggestedMemory,memoryStage} from './recollection.js';
 
 const devicePreview=previewOptions(location.search);
 if(devicePreview) {
@@ -43,6 +44,8 @@ let journalRange = null;
 let expenseMonth=dateKey(new Date()).slice(0,7);
 let pendingDiary=null;
 let pendingWeather=null;
+let rememberedDate=null;
+let swipeStart=null;
 let naverRunning=false;
 let naverConfigured=false;
 let lastAutoAttempt='';
@@ -75,6 +78,7 @@ function completionSummary() {
   return `<div class="completion-summary"><span>${complete === tasks.length ? '오늘의 작은 약속을 모두 지켰어요.' : '하나씩, 나의 속도로 챙겨요.'}</span><span>${complete}/${tasks.length}</span></div><progress class="completion-progress" max="${tasks.length}" value="${complete}" aria-label="오늘 할 일 완료 현황"></progress>`;
 }
 function render() {
+  document.body.classList.toggle('records-view',page==='records');
   const season = theme();
   document.documentElement.style.setProperty('--accent', season.color);
   document.documentElement.style.setProperty('--tint', season.tint);
@@ -114,9 +118,10 @@ function recordCard(entry) {
 function renderRecords() {
   if (journalFilter !== 'all' && !state.categories.includes(journalFilter)) journalFilter = 'all';
   main.innerHTML = journalShell(state, recordQuery, journalFilter);
+  renderMemoryStage();
   if(journalFilter==='expenses') document.querySelector('#record-search').insertAdjacentHTML('beforebegin',expensePanel(state,expenseMonth));
   const world=main.querySelector('.world-note');if(world) world.insertAdjacentHTML('beforeend','<button class="small-button" data-weather>그날의 날씨 찾기 ↗</button>');
-  if (journalRange) document.querySelector('#record-search').insertAdjacentHTML('beforebegin', `<div class="preview-banner"><span>작년 이맘때 · ${journalRange.start} ~ ${journalRange.end}</span><button data-clear-range>전체 기간</button></div>`);
+  if (journalRange) document.querySelector('#record-search').insertAdjacentHTML('beforebegin', `<div class="preview-banner"><span>${journalRange.start===journalRange.end?'그날의 기록':'작년 이맘때'} · ${journalRange.start} ~ ${journalRange.end}</span><button data-clear-range>전체 기간</button></div>`);
   renderRecordResults();
 }
 function renderRecordResults() {
@@ -129,6 +134,37 @@ function renderRecordResults() {
   results.innerHTML = result.html;
 }
 function inRange(item) { return item.date >= journalRange.start && item.date <= journalRange.end; }
+function availableMemories() {
+  return memoryDays(state,new Date(),journalFilter).filter(day=>!journalRange || inRange(day));
+}
+function renderMemoryStage(direction=0) {
+  const target=document.querySelector('#recollection');if(!target)return;
+  const days=availableMemories();
+  if(!days.some(day=>day.date===rememberedDate))rememberedDate=suggestedMemory(days);
+  target.hidden=Boolean(recordQuery.trim());
+  target.innerHTML=memoryStage(days,rememberedDate,{direction,rangeActive:Boolean(journalRange)});
+}
+function stepMemory(step) {
+  const days=availableMemories();const index=days.findIndex(day=>day.date===rememberedDate);
+  const next=days[index+step];if(!next)return;
+  const focused=document.activeElement?.dataset.memoryStep;
+  const stageFocused=document.activeElement?.hasAttribute('data-memory-stage');
+  rememberedDate=next.date;renderMemoryStage(step);
+  if(stageFocused) document.querySelector('[data-memory-stage]')?.focus({preventScroll:true});
+  else if(focused){const button=document.querySelector(`[data-memory-step="${focused}"]`);if(button && !button.disabled)button.focus({preventScroll:true});else document.querySelector('[data-memory-stage]')?.focus({preventScroll:true});}
+}
+document.addEventListener('pointerdown',event=>{
+  if(event.target.closest('[data-memory-stage]') && event.isPrimary)swipeStart={x:event.clientX,y:event.clientY,id:event.pointerId};
+});
+document.addEventListener('pointerup',event=>{
+  if(!swipeStart || swipeStart.id!==event.pointerId)return;
+  const deltaX=event.clientX-swipeStart.x,deltaY=event.clientY-swipeStart.y;swipeStart=null;
+  if(Math.abs(deltaX)>45 && Math.abs(deltaX)>Math.abs(deltaY)*1.5)stepMemory(deltaX<0?1:-1);
+});
+document.addEventListener('pointercancel',()=>{swipeStart=null;});
+document.addEventListener('keydown',event=>{
+  if(event.target.matches('[data-memory-stage]') && ['ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();stepMemory(event.key==='ArrowRight'?1:-1);}
+});
 function openModal(title, body) {
   document.querySelector('#modal-content').innerHTML = `<div class="modal-head"><h2 id="modal-title">${title}</h2><button class="icon-button" data-close aria-label="닫기">${icon('close')}</button></div>${body}`;
   modal.showModal();
@@ -348,6 +384,11 @@ document.addEventListener('click', event => {
   else if ('connections' in d) openConnections();
   else if ('naverList' in d) loadNaverCalendars(button);
   else if ('naverSync' in d) runNaverSync();
+  else if ('memoryStep' in d) stepMemory(Number(d.memoryStep));
+  else if ('memoryOpen' in d) {
+    journalRange={start:d.memoryOpen,end:d.memoryOpen};renderRecords();
+    document.querySelector('#record-results').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});
+  }
   else if ('weather' in d) openWeather();
   else if ('saveWeather' in d) saveWeather();
   else if ('journalFilter' in d) { journalFilter=d.journalFilter; renderRecords(); }
@@ -365,7 +406,7 @@ document.addEventListener('click', event => {
   else if ('addRecord' in d) openRecord(d.addRecord);
   else if ('editTask' in d) { const task = state.tasks.find(t => t.id === d.editTask); if (task) openTask(task.date, task.title, task.id); }
   else if ('editRecord' in d) { const entry = state.entries.find(e => e.id === d.editRecord); if (entry) openRecord(entry.date, entry.text, entry.id); }
-  else if ('clearSearch' in d) { recordQuery = ''; document.querySelector('#record-search').value = ''; renderRecordResults(); document.querySelector('#record-search').focus(); }
+  else if ('clearSearch' in d) { recordQuery = ''; document.querySelector('#record-search').value = ''; renderRecordResults();renderMemoryStage(); document.querySelector('#record-search').focus(); }
   else if ('confirmImport' in d && pendingImport) {
     const result = mergeBackup(state, pendingImport);
     if (!save(result.state)) { document.querySelector('#restore-error').textContent = '기기에 저장하지 못했어요. 기존 데이터는 유지했어요. 저장 공간을 확인하고 다시 시도해 주세요.'; return; }
@@ -427,7 +468,7 @@ document.addEventListener('change', event => {
   }
 });
 document.addEventListener('input', event => {
-  if (event.target.id === 'record-search') { recordQuery = event.target.value; renderRecordResults(); }
+  if (event.target.id === 'record-search') { recordQuery = event.target.value; renderRecordResults(); const stage=document.querySelector('#recollection');if(stage)stage.hidden=Boolean(recordQuery.trim()); }
   else if (event.target.id === 'record-text') document.querySelector('#character-count').textContent = `${event.target.value.length}/1000`;
 });
 document.addEventListener('submit', event => {
