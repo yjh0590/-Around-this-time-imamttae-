@@ -45,7 +45,7 @@ let expenseMonth=dateKey(new Date()).slice(0,7);
 let pendingDiary=null;
 let pendingWeather=null;
 let rememberedDate=null;
-let swipeStart=null;
+let memoryDrag=null;
 let naverRunning=false;
 let naverConfigured=false;
 let lastAutoAttempt='';
@@ -121,7 +121,11 @@ function renderRecords() {
   renderMemoryStage();
   if(journalFilter==='expenses') document.querySelector('#record-search').insertAdjacentHTML('beforebegin',expensePanel(state,expenseMonth));
   const world=main.querySelector('.world-note');if(world) world.insertAdjacentHTML('beforeend','<button class="small-button" data-weather>그날의 날씨 찾기 ↗</button>');
-  if (journalRange) document.querySelector('#record-search').insertAdjacentHTML('beforebegin', `<div class="preview-banner"><span>${journalRange.start===journalRange.end?'그날의 기록':'작년 이맘때'} · ${journalRange.start} ~ ${journalRange.end}</span><button data-clear-range>전체 기간</button></div>`);
+  if (journalRange) {
+    const {start,end}=journalRange;
+    const period=start===end ? start : `${start} ~ ${end}`;
+    document.querySelector('#record-search').insertAdjacentHTML('beforebegin', `<div class="preview-banner"><span>${period}</span><button data-clear-range>전체 기간</button></div>`);
+  }
   renderRecordResults();
 }
 function renderRecordResults() {
@@ -139,6 +143,7 @@ function availableMemories() {
 }
 function renderMemoryStage(direction=0) {
   const target=document.querySelector('#recollection');if(!target)return;
+  resetMemoryDrag();
   const days=availableMemories();
   if(!days.some(day=>day.date===rememberedDate))rememberedDate=suggestedMemory(days);
   target.hidden=Boolean(recordQuery.trim());
@@ -153,15 +158,53 @@ function stepMemory(step) {
   if(stageFocused) document.querySelector('[data-memory-stage]')?.focus({preventScroll:true});
   else if(focused){const button=document.querySelector(`[data-memory-step="${focused}"]`);if(button && !button.disabled)button.focus({preventScroll:true});else document.querySelector('[data-memory-stage]')?.focus({preventScroll:true});}
 }
-document.addEventListener('pointerdown',event=>{
-  if(event.target.closest('[data-memory-stage]') && event.isPrimary)swipeStart={x:event.clientX,y:event.clientY,id:event.pointerId};
+function resetMemoryDrag() {
+  if (!memoryDrag) return;
+  memoryDrag.stage.classList.remove('is-dragging');
+  memoryDrag.stage.style.removeProperty('--memory-offset');
+  memoryDrag=null;
+}
+document.addEventListener('pointerdown', event=>{
+  const stage=event.target.closest('[data-swipeable]');
+  if (!stage || !event.isPrimary || event.button!==0) return;
+  resetMemoryDrag();
+  memoryDrag={stage, id:event.pointerId, x:event.clientX, y:event.clientY};
 });
-document.addEventListener('pointerup',event=>{
-  if(!swipeStart || swipeStart.id!==event.pointerId)return;
-  const deltaX=event.clientX-swipeStart.x,deltaY=event.clientY-swipeStart.y;swipeStart=null;
-  if(Math.abs(deltaX)>45 && Math.abs(deltaX)>Math.abs(deltaY)*1.5)stepMemory(deltaX<0?1:-1);
+document.addEventListener('pointermove', event=>{
+  if (memoryDrag?.id!==event.pointerId) return;
+  const {stage,x,y}=memoryDrag;
+  const deltaX=event.clientX-x;
+  const deltaY=event.clientY-y;
+  if (!stage.classList.contains('is-dragging')) {
+    if (Math.abs(deltaY)>8 && Math.abs(deltaY)>=Math.abs(deltaX)) {
+      resetMemoryDrag();
+      return;
+    }
+    if (Math.abs(deltaX)<8 || Math.abs(deltaX)<=Math.abs(deltaY)*1.5) return;
+    stage.classList.add('is-dragging');
+    if (event.isTrusted) stage.setPointerCapture(event.pointerId);
+  }
+  const step=deltaX<0 ? 1 : -1;
+  const atEdge=stage.closest('.recollection').querySelector(`[data-memory-step="${step}"]`).disabled;
+  const offset=Math.max(-64,Math.min(64,deltaX*(atEdge ? .16 : .62)));
+  stage.style.setProperty('--memory-offset',`${offset}px`);
 });
-document.addEventListener('pointercancel',()=>{swipeStart=null;});
+document.addEventListener('pointerup', event=>{
+  if (memoryDrag?.id!==event.pointerId) return;
+  const {stage,x,y}=memoryDrag;
+  const deltaX=event.clientX-x;
+  const deltaY=event.clientY-y;
+  resetMemoryDrag();
+  if (stage.isConnected && Math.abs(deltaX)>45 && Math.abs(deltaX)>Math.abs(deltaY)*1.5) {
+    stepMemory(deltaX<0 ? 1 : -1);
+  }
+});
+for (const type of ['pointercancel','lostpointercapture']) {
+  document.addEventListener(type,event=>{
+    if (memoryDrag?.id===event.pointerId) resetMemoryDrag();
+  });
+}
+window.addEventListener('blur',resetMemoryDrag);
 document.addEventListener('keydown',event=>{
   if(event.target.matches('[data-memory-stage]') && ['ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();stepMemory(event.key==='ArrowRight'?1:-1);}
 });

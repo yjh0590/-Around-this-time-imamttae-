@@ -54,9 +54,9 @@ export function memoryStage(days,date,{now=new Date(),direction=0,rangeActive=fa
           <button data-memory-step="1" aria-label="더 오래된 기억" aria-controls="memory-stage" ${index>=days.length-1?'disabled':''}>→</button>
         </div>
       </div>
-      <div id="memory-stage" class="memory-stage ${motionClass}" data-memory-stage tabindex="0" role="group" aria-label="${e(fullDate)}. ${memoryDistance(day.date,now)}.${days.length>1?' 좌우 방향키나 스와이프로 넘기기':''}">
+      <div id="memory-stage" class="memory-stage ${motionClass}" data-memory-stage ${days.length>1?'data-swipeable':''} tabindex="0" role="group" aria-label="${e(fullDate)}. ${memoryDistance(day.date,now)}.${days.length>1?' 좌우 방향키나 스와이프로 넘기기':''}">
         <div class="memory-paper">
-          ${photo?`<figure class="recollection-figure"><img class="recollection-photo" src="${e(photo.imageData)}" alt="${e(photo.title)}"></figure>`:''}
+          ${photo?`<figure class="recollection-figure"><img class="recollection-photo" src="${e(photo.imageData)}" alt="${e(photo.title)}" draggable="false"></figure>`:''}
           <div class="recollection-writing">
             <time datetime="${day.date}">${e(fullDate)}</time>
             ${written ? `<blockquote>${e(written)}</blockquote>` : ''}

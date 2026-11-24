@@ -735,8 +735,12 @@ html[data-device-preview] .toast {bottom:calc(100px + var(--device-safe-bottom))
 .memory-controls button {width:44px;height:44px;font-size:20px;border-radius:6px;color:#4e4840;}
 .memory-controls button:hover:not(:disabled),.memory-year:hover {background:#eeeae3;}
 .memory-controls button:disabled {opacity:.3;cursor:default;}
-.memory-stage {touch-action:pan-y;outline-offset:4px;border-radius:8px;}
+.memory-stage {outline-offset:4px;border-radius:8px;}
+.memory-stage[data-swipeable] {touch-action:pan-y pinch-zoom;cursor:grab;user-select:none;overflow:clip;}
+.memory-stage.is-dragging {cursor:grabbing;animation:none;}
 .memory-paper {overflow:hidden;background:#fff;border:1px solid #e5e0d8;border-radius:8px;}
+.memory-stage[data-swipeable] .memory-paper {transform:translateX(var(--memory-offset,0px));transition:transform .24s ease-out;}
+.memory-stage.is-dragging .memory-paper {transition:none;}
 .recollection-figure {margin:0;}
 .recollection-photo {display:block;width:100%;aspect-ratio:16/9;object-fit:cover;}
 .recollection-writing {padding:20px 20px 24px;}
@@ -759,10 +763,10 @@ html[data-device-preview] .toast {bottom:calc(100px + var(--device-safe-bottom))
 .recollection-bottom button {font-size:13px;color:#59483b;min-height:44px;padding:6px 0 6px 10px;}
 .recollection-bottom span {margin-inline-start:3px;}
 .recollection-bottom button:hover {text-decoration:underline;}
-.turn-older {animation:memory-older .22s ease-out both;}
-.turn-newer {animation:memory-newer .22s ease-out both;}
-@keyframes memory-older {from{opacity:.55;transform:translateX(8px)}to{opacity:1;transform:none}}
-@keyframes memory-newer {from{opacity:.55;transform:translateX(-8px)}to{opacity:1;transform:none}}
+.turn-older {animation:memory-older .28s ease-out;}
+.turn-newer {animation:memory-newer .28s ease-out;}
+@keyframes memory-older {from{opacity:.55;transform:translateX(18px)}to{opacity:1;transform:none}}
+@keyframes memory-newer {from{opacity:.55;transform:translateX(-18px)}to{opacity:1;transform:none}}
 .recollection-empty {display:flex;align-items:center;gap:12px;padding:4px 0 14px;}
 .recollection-friend {width:80px;height:100px;flex-shrink:0;background-image:url('assets/seasonal-companion.png');background-size:400% auto;background-position:var(--position) center;mix-blend-mode:multiply;}
 .recollection-empty h2 {font-size:15px;font-weight:550;color:#3f3b36;line-height:1.6;margin:0;}
@@ -783,4 +787,5 @@ html[data-device-preview] .toast {bottom:calc(100px + var(--device-safe-bottom))
 }
 @media(prefers-reduced-motion:reduce) {
   .turn-older,.turn-newer {animation:none;}
+  .memory-stage[data-swipeable] .memory-paper {transform:none;transition:none;}
 }
